@@ -60,6 +60,7 @@ import org.onekash.kashcal.data.db.entity.Calendar
 import org.onekash.kashcal.data.db.entity.Event
 import org.onekash.kashcal.data.db.entity.Occurrence
 import org.onekash.kashcal.domain.EmojiMatcher
+import org.onekash.kashcal.ui.util.DayPagerUtils
 import org.onekash.kashcal.util.DateTimeUtils
 import java.time.LocalDate
 import java.time.LocalTime
@@ -796,9 +797,9 @@ private fun CurrentTimeIndicator(
 /**
  * Group events by LocalDate.
  *
- * Uses DateTimeUtils.eventTsToLocalDate() for correct timezone handling:
- * - All-day events: UTC to preserve calendar date (fixes birthday showing day before)
- * - Timed events: Local timezone for user's perspective
+ * Uses pre-calculated startDay/endDay from Occurrence which are already
+ * UTC-aware for all-day events (calculated at sync time via Occurrence.toDayFormat).
+ * Expands multi-day events to appear on all days they span.
  */
 private fun groupEventsByDate(
     occurrences: List<Occurrence>,
@@ -810,9 +811,15 @@ private fun groupEventsByDate(
     for (occurrence in occurrences) {
         val eventId = occurrence.exceptionEventId ?: occurrence.eventId
         val event = eventMap[eventId] ?: continue
-        // Use DateTimeUtils for correct all-day event timezone handling
-        val date = DateTimeUtils.eventTsToLocalDate(occurrence.startTs, event.isAllDay)
-        result.getOrPut(date) { mutableListOf() }.add(event to occurrence)
+
+        // Expand multi-day events to all days they span
+        // Uses pre-calculated startDay/endDay (UTC-aware for all-day events)
+        var currentDay = occurrence.startDay
+        while (currentDay <= occurrence.endDay) {
+            val date = DayPagerUtils.dayCodeToLocalDate(currentDay)
+            result.getOrPut(date) { mutableListOf() }.add(event to occurrence)
+            currentDay = Occurrence.incrementDayCode(currentDay)
+        }
     }
 
     return result

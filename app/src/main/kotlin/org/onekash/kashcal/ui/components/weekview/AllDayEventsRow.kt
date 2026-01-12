@@ -92,13 +92,13 @@ fun AllDayEventsRow(
                     .heightIn(max = if (expanded) MAX_EXPANDED_HEIGHT else MAX_COLLAPSED_HEIGHT)
                     .animateContentSize()
             ) {
-                val columnWidth = maxWidth / 3  // Match TimeGrid's 3-day view
+                val columnWidth = maxWidth / 3  // Match time grid's 3-day view
 
                 HorizontalPager(
                     state = pagerState,
                     pageSize = PageSize.Fixed(columnWidth),  // CRITICAL: Show 3 days
                     beyondViewportPageCount = 2,
-                    userScrollEnabled = false  // Scrolling controlled by TimeGrid
+                    userScrollEnabled = false  // Scrolling controlled by main pager
                 ) { dayIndex ->
                     val dayEvents = allDayEvents[dayIndex] ?: emptyList()
 

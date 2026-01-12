@@ -5,6 +5,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.onekash.kashcal.data.db.entity.Event
+import org.onekash.kashcal.util.DateTimeUtils
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 /**
  * Unit tests for EventQuickViewSheet recurring event detection logic.
@@ -390,5 +394,100 @@ class EventQuickViewSheetTest {
         val isReadOnlyCalendar = false
         val showDeleteButton = !isReadOnlyCalendar
         assertTrue("Editable calendar should show Delete", showDeleteButton)
+    }
+
+    // ========== formatEventDateTime Tests (Multi-day) ==========
+
+    @Test
+    fun `formatEventDateTime shows both dates for multi-day timed`() {
+        // Jan 15 9AM to Jan 17 5PM local time
+        val zone = ZoneId.systemDefault()
+        val startTs = LocalDate.of(2026, 1, 15).atTime(9, 0)
+            .atZone(zone).toInstant().toEpochMilli()
+        val endTs = LocalDate.of(2026, 1, 17).atTime(17, 0)
+            .atZone(zone).toInstant().toEpochMilli()
+
+        val result = formatEventDateTime(startTs, endTs, isAllDay = false)
+
+        // Should contain both dates and arrow
+        assertTrue("Should contain Jan 15", result.contains("Jan 15"))
+        assertTrue("Should contain Jan 17", result.contains("Jan 17"))
+        assertTrue("Should contain arrow", result.contains("\u2192"))
+        // Should NOT contain "All day"
+        assertFalse("Should not contain All day", result.contains("All day"))
+    }
+
+    @Test
+    fun `formatEventDateTime shows single date for same-day timed`() {
+        val zone = ZoneId.systemDefault()
+        val startTs = LocalDate.of(2026, 1, 15).atTime(9, 0)
+            .atZone(zone).toInstant().toEpochMilli()
+        val endTs = LocalDate.of(2026, 1, 15).atTime(17, 0)
+            .atZone(zone).toInstant().toEpochMilli()
+
+        val result = formatEventDateTime(startTs, endTs, isAllDay = false)
+
+        // Should contain date and middle dot separator
+        assertTrue("Should contain Jan 15", result.contains("Jan 15"))
+        assertTrue("Should contain middle dot", result.contains("\u00b7"))
+        // Should NOT contain arrow (single day)
+        assertFalse("Should not contain arrow", result.contains("\u2192"))
+    }
+
+    @Test
+    fun `formatEventDateTime keeps All day suffix for multi-day all-day`() {
+        // Jan 15-17 as UTC midnight (all-day events)
+        // endTs is next day midnight minus 1ms (23:59:59.999)
+        val startTs = LocalDate.of(2026, 1, 15).atStartOfDay(ZoneOffset.UTC)
+            .toInstant().toEpochMilli()
+        val endTs = LocalDate.of(2026, 1, 18).atStartOfDay(ZoneOffset.UTC)
+            .toInstant().toEpochMilli() - 1  // 23:59:59.999 on Jan 17
+
+        val result = formatEventDateTime(startTs, endTs, isAllDay = true)
+
+        assertTrue("Should contain All day", result.contains("All day"))
+        assertTrue("Should contain arrow", result.contains("\u2192"))
+    }
+
+    @Test
+    fun `formatEventDateTime shows All day for single all-day event`() {
+        val startTs = LocalDate.of(2026, 1, 15).atStartOfDay(ZoneOffset.UTC)
+            .toInstant().toEpochMilli()
+        val endTs = LocalDate.of(2026, 1, 16).atStartOfDay(ZoneOffset.UTC)
+            .toInstant().toEpochMilli() - 1  // 23:59:59.999 on Jan 15
+
+        val result = formatEventDateTime(startTs, endTs, isAllDay = true)
+
+        assertTrue("Should contain All day", result.contains("All day"))
+        assertTrue("Should contain middle dot", result.contains("\u00b7"))
+        assertFalse("Should not contain arrow", result.contains("\u2192"))
+    }
+
+    // ========== Helper: formatEventDateTime ====================
+
+    /**
+     * Copy of formatEventDateTime from EventQuickViewSheet for testing.
+     */
+    private fun formatEventDateTime(startTs: Long, endTs: Long, isAllDay: Boolean): String {
+        val startDateStr = DateTimeUtils.formatEventDateShort(startTs, isAllDay)
+        val endDateStr = DateTimeUtils.formatEventDateShort(endTs, isAllDay)
+        val isMultiDay = DateTimeUtils.spansMultipleDays(startTs, endTs, isAllDay)
+
+        return if (isAllDay) {
+            if (isMultiDay) {
+                "$startDateStr \u2192 $endDateStr \u00b7 All day"
+            } else {
+                "$startDateStr \u00b7 All day"
+            }
+        } else {
+            val startTime = DateTimeUtils.formatEventTime(startTs, isAllDay)
+            val endTime = DateTimeUtils.formatEventTime(endTs, isAllDay)
+            if (isMultiDay) {
+                // Multi-day timed: show both dates and times
+                "$startDateStr $startTime \u2192 $endDateStr $endTime"
+            } else {
+                "$startDateStr \u00b7 $startTime - $endTime"
+            }
+        }
     }
 }

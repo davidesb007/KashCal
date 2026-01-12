@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.onekash.kashcal.data.db.entity.Occurrence
 import org.onekash.kashcal.ui.util.DayPagerUtils
 import java.time.LocalDate
 import java.time.ZoneId
@@ -158,6 +159,50 @@ class DayEventsCacheTest {
         assertTrue("End dayCode should be >= center", endDayCode > centerDayCode)
     }
 
+    // ==================== generateDayCodesInRange Tests ====================
+
+    @Test
+    fun `generateDayCodesInRange returns single day for same start and end`() {
+        val result = generateDayCodesInRange(20260115, 20260115)
+        assertEquals(listOf(20260115), result)
+    }
+
+    @Test
+    fun `generateDayCodesInRange handles 3-day span`() {
+        val result = generateDayCodesInRange(20260115, 20260117)
+        assertEquals(listOf(20260115, 20260116, 20260117), result)
+    }
+
+    @Test
+    fun `generateDayCodesInRange handles month boundary`() {
+        val result = generateDayCodesInRange(20260130, 20260202)
+        assertEquals(listOf(20260130, 20260131, 20260201, 20260202), result)
+    }
+
+    @Test
+    fun `generateDayCodesInRange handles year boundary`() {
+        val result = generateDayCodesInRange(20251230, 20260102)
+        assertEquals(listOf(20251230, 20251231, 20260101, 20260102), result)
+    }
+
+    @Test
+    fun `generateDayCodesInRange returns empty for invalid range`() {
+        val result = generateDayCodesInRange(20260117, 20260115) // end < start
+        assertEquals(emptyList<Int>(), result)
+    }
+
+    @Test
+    fun `generateDayCodesInRange handles February leap year`() {
+        val result = generateDayCodesInRange(20240228, 20240301)
+        assertEquals(listOf(20240228, 20240229, 20240301), result)
+    }
+
+    @Test
+    fun `generateDayCodesInRange handles February non-leap year`() {
+        val result = generateDayCodesInRange(20250228, 20250302)
+        assertEquals(listOf(20250228, 20250301, 20250302), result)
+    }
+
     // ==================== HomeUiState Cache Fields Tests ====================
 
     @Test
@@ -208,5 +253,22 @@ class DayEventsCacheTest {
         if (cacheCenter == 0L) return true
         val distanceFromCenter = kotlin.math.abs(currentDateMs - cacheCenter)
         return distanceFromCenter > DayPagerUtils.DAY_MS
+    }
+
+    /**
+     * Copy of generateDayCodesInRange from HomeViewModel for testing.
+     * Uses Occurrence.incrementDayCode for calendar-correct month/year boundaries.
+     */
+    private fun generateDayCodesInRange(startDay: Int, endDay: Int): List<Int> {
+        if (startDay == endDay) return listOf(startDay)
+        if (startDay > endDay) return emptyList()
+
+        val result = mutableListOf<Int>()
+        var current = startDay
+        while (current <= endDay) {
+            result.add(current)
+            current = Occurrence.incrementDayCode(current)
+        }
+        return result
     }
 }

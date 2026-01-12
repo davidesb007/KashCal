@@ -1416,8 +1416,20 @@ class HomeViewModel @Inject constructor(
                         }
 
                         // Group by dayCode for O(1) lookup
+                        // Use pre-calculated startDay/endDay (already UTC-aware for all-day events)
+                        // Expand multi-day events to all days they span
                         val grouped = visible
-                            .groupBy { DayPagerUtils.msToDayCode(it.occurrence.startTs) }
+                            .flatMap { item ->
+                                val startDay = item.occurrence.startDay
+                                val endDay = item.occurrence.endDay
+                                if (startDay == endDay) {
+                                    listOf(startDay to item)
+                                } else {
+                                    // Multi-day: generate entry for each day in span
+                                    generateDayCodesInRange(startDay, endDay).map { dayCode -> dayCode to item }
+                                }
+                            }
+                            .groupBy({ it.first }, { it.second })
                             .mapValues { (_, list) ->
                                 list.sortedBy { it.occurrence.startTs }.toPersistentList()
                             }
@@ -1471,6 +1483,27 @@ class HomeViewModel @Inject constructor(
     private fun formatDateLabel(dateMillis: Long): String {
         val format = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
         return format.format(dateMillis)
+    }
+
+    /**
+     * Generate all day codes between start and end (inclusive).
+     * Uses Occurrence.incrementDayCode for calendar-correct month/year boundaries.
+     *
+     * @param startDay Start day code (YYYYMMDD format)
+     * @param endDay End day code (YYYYMMDD format)
+     * @return List of day codes from start to end inclusive
+     */
+    private fun generateDayCodesInRange(startDay: Int, endDay: Int): List<Int> {
+        if (startDay == endDay) return listOf(startDay)
+        if (startDay > endDay) return emptyList() // Invalid range guard
+
+        val result = mutableListOf<Int>()
+        var current = startDay
+        while (current <= endDay) {
+            result.add(current)
+            current = Occurrence.incrementDayCode(current)
+        }
+        return result
     }
 
     // ==================== Search ====================

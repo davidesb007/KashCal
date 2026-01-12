@@ -5,9 +5,11 @@ import org.junit.Assert.*
 import org.onekash.kashcal.data.db.entity.Event
 import org.onekash.kashcal.data.db.entity.Occurrence
 import org.onekash.kashcal.data.db.entity.SyncStatus
+import org.onekash.kashcal.ui.util.DayPagerUtils
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -73,127 +75,6 @@ class WeekViewContentTest {
     private fun getWeekStartMs(date: LocalDate): Long {
         val weekStart = WeekViewUtils.getWeekStart(date)
         return weekStart.atStartOfDay(zone).toInstant().toEpochMilli()
-    }
-
-    // ==================== groupEventsByDay Tests ====================
-
-    @Test
-    fun `groupEventsByDay returns empty map for no events`() {
-        val weekStart = getWeekStartMs(LocalDate.now())
-        val result = groupEventsByDay(emptyList(), emptyList(), weekStart)
-        assertTrue(result.isEmpty())
-    }
-
-    @Test
-    fun `groupEventsByDay groups events by day index`() {
-        val today = LocalDate.now()
-        val weekStart = getWeekStartMs(today)
-        val weekStartDate = WeekViewUtils.getWeekStart(today)
-
-        // Create events on different days
-        val mondayDate = weekStartDate.plusDays(1) // Monday (index 1)
-        val wednesdayDate = weekStartDate.plusDays(3) // Wednesday (index 3)
-
-        val event1 = createTestEvent(id = 1, title = "Monday Event")
-        val event2 = createTestEvent(id = 2, title = "Wednesday Event")
-
-        val occ1 = createTestOccurrence(
-            eventId = 1,
-            date = mondayDate,
-            startHour = 9,
-            endHour = 10
-        )
-        val occ2 = createTestOccurrence(
-            eventId = 2,
-            date = wednesdayDate,
-            startHour = 14,
-            endHour = 15
-        )
-
-        val events = listOf(event1, event2)
-        val occurrences = listOf(occ1, occ2)
-
-        val result = groupEventsByDay(occurrences, events, weekStart)
-
-        // Should have entries for days 1 and 3
-        assertEquals(2, result.size)
-        assertTrue(result.containsKey(1))
-        assertTrue(result.containsKey(3))
-        assertEquals(1, result[1]?.size)
-        assertEquals(1, result[3]?.size)
-        assertEquals("Monday Event", result[1]?.first()?.first?.title)
-        assertEquals("Wednesday Event", result[3]?.first()?.first?.title)
-    }
-
-    @Test
-    fun `groupEventsByDay handles multiple events on same day`() {
-        val today = LocalDate.now()
-        val weekStart = getWeekStartMs(today)
-        val weekStartDate = WeekViewUtils.getWeekStart(today)
-        val tuesday = weekStartDate.plusDays(2) // Tuesday (index 2)
-
-        // Two events on Tuesday
-        val event1 = createTestEvent(id = 1, title = "Morning Meeting")
-        val event2 = createTestEvent(id = 2, title = "Afternoon Call")
-
-        val occ1 = createTestOccurrence(eventId = 1, date = tuesday, startHour = 9, endHour = 10)
-        val occ2 = createTestOccurrence(eventId = 2, date = tuesday, startHour = 14, endHour = 15)
-
-        val result = groupEventsByDay(listOf(occ1, occ2), listOf(event1, event2), weekStart)
-
-        assertEquals(1, result.size)
-        assertTrue(result.containsKey(2))
-        assertEquals(2, result[2]?.size)
-    }
-
-    @Test
-    fun `groupEventsByDay uses exceptionEventId when present`() {
-        val today = LocalDate.now()
-        val weekStart = getWeekStartMs(today)
-        val weekStartDate = WeekViewUtils.getWeekStart(today)
-        val monday = weekStartDate.plusDays(1)
-
-        // Master event and exception event
-        val masterEvent = createTestEvent(id = 100, title = "Master Event")
-        val exceptionEvent = createTestEvent(id = 101, title = "Modified Exception")
-
-        // Occurrence points to master but has exceptionEventId
-        val occurrence = createTestOccurrence(
-            eventId = 100,
-            date = monday,
-            startHour = 10,
-            endHour = 11,
-            exceptionEventId = 101
-        )
-
-        // Events list includes exception event (which is what UI should display)
-        val result = groupEventsByDay(listOf(occurrence), listOf(masterEvent, exceptionEvent), weekStart)
-
-        assertEquals(1, result.size)
-        assertEquals(1, result[1]?.size)
-        // Should use exception event, not master
-        assertEquals("Modified Exception", result[1]?.first()?.first?.title)
-    }
-
-    @Test
-    fun `groupEventsByDay skips occurrences with missing events`() {
-        val today = LocalDate.now()
-        val weekStart = getWeekStartMs(today)
-        val weekStartDate = WeekViewUtils.getWeekStart(today)
-        val monday = weekStartDate.plusDays(1)
-
-        // Occurrence references event ID that doesn't exist
-        val orphanOccurrence = createTestOccurrence(
-            eventId = 999,
-            date = monday,
-            startHour = 9,
-            endHour = 10
-        )
-
-        val result = groupEventsByDay(listOf(orphanOccurrence), emptyList(), weekStart)
-
-        // Should be empty since event doesn't exist
-        assertTrue(result.isEmpty())
     }
 
     // ==================== Week Navigation Tests ====================
@@ -262,70 +143,158 @@ class WeekViewContentTest {
         assertEquals(6, nextDayIndex) // Clamped to 6
     }
 
-    // ==================== Event Display Tests ====================
+    // ==================== groupEventsByDate Tests (Multi-day expansion) ====================
 
     @Test
-    fun `events sorted by start time within day`() {
-        val today = LocalDate.now()
-        val weekStart = getWeekStartMs(today)
-        val weekStartDate = WeekViewUtils.getWeekStart(today)
-        val monday = weekStartDate.plusDays(1)
+    fun `groupEventsByDate expands multi-day event to all days`() {
+        // 3-day event: Jan 15-17
+        val jan15 = LocalDate.of(2026, 1, 15)
+        val jan17 = LocalDate.of(2026, 1, 17)
 
-        // Create events in reverse chronological order
-        val event1 = createTestEvent(id = 1, title = "Late Event")
-        val event2 = createTestEvent(id = 2, title = "Early Event")
+        val event = createTestEvent(id = 100, title = "Conference", isAllDay = false)
+        val occurrence = Occurrence(
+            eventId = 100,
+            calendarId = testCalendarId,
+            startTs = jan15.atTime(9, 0).atZone(zone).toInstant().toEpochMilli(),
+            endTs = jan17.atTime(17, 0).atZone(zone).toInstant().toEpochMilli(),
+            startDay = 20260115,
+            endDay = 20260117,
+            isCancelled = false
+        )
 
-        val lateOcc = createTestOccurrence(eventId = 1, date = monday, startHour = 15, endHour = 16)
-        val earlyOcc = createTestOccurrence(eventId = 2, date = monday, startHour = 9, endHour = 10)
+        val grouped = groupEventsByDate(listOf(occurrence), listOf(event))
 
-        // Pass in reverse order
-        val events = listOf(event1, event2)
-        val occurrences = listOf(lateOcc, earlyOcc)
+        // Should appear on all 3 days
+        assertEquals(3, grouped.size)
+        assertTrue(grouped.containsKey(jan15))
+        assertTrue(grouped.containsKey(LocalDate.of(2026, 1, 16)))
+        assertTrue(grouped.containsKey(jan17))
 
-        val result = groupEventsByDay(occurrences, events, weekStart)
-        val mondayEvents = result[1] ?: emptyList()
-
-        assertEquals(2, mondayEvents.size)
-        // Grouping doesn't sort - that's done by positionEventsForDay
-        // Just verify both events are present
-        assertTrue(mondayEvents.any { it.first.title == "Early Event" })
-        assertTrue(mondayEvents.any { it.first.title == "Late Event" })
+        // Each day should have the same event
+        assertEquals("Conference", grouped[jan15]?.first()?.first?.title)
+        assertEquals("Conference", grouped[LocalDate.of(2026, 1, 16)]?.first()?.first?.title)
+        assertEquals("Conference", grouped[jan17]?.first()?.first?.title)
     }
 
     @Test
-    fun `all day events separated from timed events`() {
-        val today = LocalDate.now()
-        val weekStartDate = WeekViewUtils.getWeekStart(today)
-        val monday = weekStartDate.plusDays(1)
-        val weekStart = getWeekStartMs(today)
+    fun `groupEventsByDate handles single-day event`() {
+        val jan15 = LocalDate.of(2026, 1, 15)
 
-        // Timed event
-        val timedEvent = createTestEvent(id = 1, title = "Meeting", isAllDay = false)
-        val timedOcc = createTestOccurrence(eventId = 1, date = monday, startHour = 9, endHour = 10)
-
-        // All-day event (use day boundaries)
-        val allDayEvent = createTestEvent(id = 2, title = "Holiday", isAllDay = true)
-        val allDayStart = monday.atStartOfDay(zone).toInstant().toEpochMilli()
-        val allDayEnd = monday.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
-        val allDayOcc = Occurrence(
-            eventId = 2,
+        val event = createTestEvent(id = 100, title = "Meeting", isAllDay = false)
+        val occurrence = Occurrence(
+            eventId = 100,
             calendarId = testCalendarId,
-            startTs = allDayStart,
-            endTs = allDayEnd,
-            startDay = monday.year * 10000 + monday.monthValue * 100 + monday.dayOfMonth,
-            endDay = monday.year * 10000 + monday.monthValue * 100 + monday.dayOfMonth,
+            startTs = jan15.atTime(9, 0).atZone(zone).toInstant().toEpochMilli(),
+            endTs = jan15.atTime(10, 0).atZone(zone).toInstant().toEpochMilli(),
+            startDay = 20260115,
+            endDay = 20260115,
+            isCancelled = false
+        )
+
+        val grouped = groupEventsByDate(listOf(occurrence), listOf(event))
+
+        assertEquals(1, grouped.size)
+        assertTrue(grouped.containsKey(jan15))
+    }
+
+    @Test
+    fun `groupEventsByDate uses UTC for all-day events via startDay`() {
+        // All-day on Jan 15 stored as Jan 15 00:00 UTC
+        // In negative UTC offset (e.g., PST = UTC-8), local time would be Jan 14 4PM
+        // But startDay is pre-calculated with UTC, so it should be 20260115
+        val jan15 = LocalDate.of(2026, 1, 15)
+
+        val event = createTestEvent(id = 100, title = "Holiday", isAllDay = true)
+        val occurrence = Occurrence(
+            eventId = 100,
+            calendarId = testCalendarId,
+            startTs = jan15.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            endTs = jan15.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() + 86400000 - 1,
+            startDay = 20260115, // Pre-calculated as UTC
+            endDay = 20260115,
+            isCancelled = false
+        )
+
+        val grouped = groupEventsByDate(listOf(occurrence), listOf(event))
+
+        // Should be Jan 15, not Jan 14 (regardless of local timezone)
+        assertEquals(1, grouped.size)
+        assertTrue(grouped.containsKey(jan15))
+    }
+
+    @Test
+    fun `groupEventsByDate handles month boundary multi-day event`() {
+        // Event spanning Jan 30 - Feb 2
+        val event = createTestEvent(id = 100, title = "Workshop", isAllDay = false)
+        val occurrence = Occurrence(
+            eventId = 100,
+            calendarId = testCalendarId,
+            startTs = now,
+            endTs = now + 4 * 86400000,
+            startDay = 20260130,
+            endDay = 20260202,
+            isCancelled = false
+        )
+
+        val grouped = groupEventsByDate(listOf(occurrence), listOf(event))
+
+        assertEquals(4, grouped.size)
+        assertTrue(grouped.containsKey(LocalDate.of(2026, 1, 30)))
+        assertTrue(grouped.containsKey(LocalDate.of(2026, 1, 31)))
+        assertTrue(grouped.containsKey(LocalDate.of(2026, 2, 1)))
+        assertTrue(grouped.containsKey(LocalDate.of(2026, 2, 2)))
+    }
+
+    @Test
+    fun `groupEventsByDate uses exceptionEventId when present`() {
+        val jan15 = LocalDate.of(2026, 1, 15)
+
+        val masterEvent = createTestEvent(id = 100, title = "Master Event")
+        val exceptionEvent = createTestEvent(id = 101, title = "Modified Exception")
+
+        val occurrence = Occurrence(
+            eventId = 100,
+            calendarId = testCalendarId,
+            startTs = jan15.atTime(10, 0).atZone(zone).toInstant().toEpochMilli(),
+            endTs = jan15.atTime(11, 0).atZone(zone).toInstant().toEpochMilli(),
+            startDay = 20260115,
+            endDay = 20260115,
             isCancelled = false,
-            exceptionEventId = null
+            exceptionEventId = 101
         )
 
-        // Group all events together (filtering is done by WeekViewContent)
-        val result = groupEventsByDay(
-            listOf(timedOcc, allDayOcc),
-            listOf(timedEvent, allDayEvent),
-            weekStart
-        )
+        val grouped = groupEventsByDate(listOf(occurrence), listOf(masterEvent, exceptionEvent))
 
-        // Both events should be grouped to Monday
-        assertEquals(2, result[1]?.size)
+        assertEquals(1, grouped.size)
+        // Should use exception event, not master
+        assertEquals("Modified Exception", grouped[jan15]?.first()?.first?.title)
+    }
+
+    // ==================== Helper: groupEventsByDate ====================
+
+    /**
+     * Copy of groupEventsByDate from WeekViewContent for testing.
+     * Uses pre-calculated startDay/endDay and expands multi-day events.
+     */
+    private fun groupEventsByDate(
+        occurrences: List<Occurrence>,
+        events: List<Event>
+    ): Map<LocalDate, List<Pair<Event, Occurrence>>> {
+        val eventMap = events.associateBy { it.id }
+        val result = mutableMapOf<LocalDate, MutableList<Pair<Event, Occurrence>>>()
+
+        for (occurrence in occurrences) {
+            val eventId = occurrence.exceptionEventId ?: occurrence.eventId
+            val event = eventMap[eventId] ?: continue
+
+            // Expand multi-day events to all days they span
+            var currentDay = occurrence.startDay
+            while (currentDay <= occurrence.endDay) {
+                val date = DayPagerUtils.dayCodeToLocalDate(currentDay)
+                result.getOrPut(date) { mutableListOf() }.add(event to occurrence)
+                currentDay = Occurrence.incrementDayCode(currentDay)
+            }
+        }
+        return result
     }
 }

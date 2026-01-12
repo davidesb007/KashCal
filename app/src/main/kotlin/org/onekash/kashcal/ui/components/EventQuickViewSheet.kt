@@ -552,9 +552,9 @@ private fun formatEventDateTime(startTs: Long, endTs: Long, isAllDay: Boolean): 
     // Use DateTimeUtils for correct timezone handling (UTC for all-day, local for timed)
     val startDateStr = DateTimeUtils.formatEventDateShort(startTs, isAllDay)
     val endDateStr = DateTimeUtils.formatEventDateShort(endTs, isAllDay)
+    val isMultiDay = DateTimeUtils.spansMultipleDays(startTs, endTs, isAllDay)
 
     return if (isAllDay) {
-        val isMultiDay = DateTimeUtils.spansMultipleDays(startTs, endTs, isAllDay = true)
         if (isMultiDay) {
             "$startDateStr \u2192 $endDateStr \u00b7 All day"
         } else {
@@ -563,7 +563,12 @@ private fun formatEventDateTime(startTs: Long, endTs: Long, isAllDay: Boolean): 
     } else {
         val startTime = DateTimeUtils.formatEventTime(startTs, isAllDay)
         val endTime = DateTimeUtils.formatEventTime(endTs, isAllDay)
-        "$startDateStr \u00b7 $startTime - $endTime"
+        if (isMultiDay) {
+            // Multi-day timed: show both dates and times
+            "$startDateStr $startTime \u2192 $endDateStr $endTime"
+        } else {
+            "$startDateStr \u00b7 $startTime - $endTime"
+        }
     }
 }
 

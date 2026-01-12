@@ -57,13 +57,13 @@ fun DayHeadersRow(
 
         // Day headers pager (syncs with time grid)
         BoxWithConstraints(modifier = Modifier.weight(1f)) {
-            val columnWidth = maxWidth / 3  // Match TimeGrid's 3-day view
+            val columnWidth = maxWidth / 3  // Match time grid's 3-day view
 
             HorizontalPager(
                 state = pagerState,
                 pageSize = PageSize.Fixed(columnWidth),  // CRITICAL: Show 3 days
                 beyondViewportPageCount = 2,
-                userScrollEnabled = false  // Scrolling controlled by TimeGrid
+                userScrollEnabled = false  // Scrolling controlled by main pager
             ) { dayIndex ->
                 val date = WeekViewUtils.getDateForDayIndex(weekStartMs, dayIndex)
                 val isToday = date == today

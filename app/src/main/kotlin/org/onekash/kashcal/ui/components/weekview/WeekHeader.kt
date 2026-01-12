@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
  * - Next week arrow (jumps 7 days forward)
  *
  * Tapping the date area opens the date picker.
- * The date labels sync with the main TimeGrid pager.
+ * The date labels sync with the main time grid pager.
  *
  * @param weekStartMs Start of the current week in milliseconds
  * @param pagerState Pager state for syncing date labels
