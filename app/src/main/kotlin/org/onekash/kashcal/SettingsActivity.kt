@@ -86,6 +86,7 @@ class SettingsActivity : ComponentActivity() {
                 val defaultEventDuration by viewModel.defaultEventDuration.collectAsStateWithLifecycle()
                 val showEventEmojis by viewModel.showEventEmojis.collectAsStateWithLifecycle()
                 val timeFormat by viewModel.timeFormat.collectAsStateWithLifecycle()
+                val firstDayOfWeek by viewModel.firstDayOfWeek.collectAsStateWithLifecycle()
 
                 // Contact birthdays state
                 val contactBirthdaysEnabled by viewModel.contactBirthdaysEnabled.collectAsStateWithLifecycle()
@@ -286,6 +287,8 @@ class SettingsActivity : ComponentActivity() {
                             onShowEventEmojisChange = viewModel::setShowEventEmojis,
                             timeFormat = timeFormat,
                             onTimeFormatChange = viewModel::setTimeFormat,
+                            firstDayOfWeek = firstDayOfWeek,
+                            onFirstDayOfWeekChange = viewModel::setFirstDayOfWeek,
                             // Version footer
                             versionName = BuildConfig.VERSION_NAME
                         )
