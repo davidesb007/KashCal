@@ -214,7 +214,9 @@ data class HomeUiState(
 
     // === DISPLAY PREFERENCES ===
     /** Show auto-detected emojis in event titles */
-    val showEventEmojis: Boolean = true
+    val showEventEmojis: Boolean = true,
+    /** Time format preference: "system", "12h", or "24h" */
+    val timeFormat: String = "system"
 ) {
     /**
      * Format the current viewing month/year for display.

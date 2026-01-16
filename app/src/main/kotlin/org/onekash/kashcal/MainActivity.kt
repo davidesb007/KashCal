@@ -47,6 +47,7 @@ import org.onekash.kashcal.ui.viewmodels.PendingAction
 import org.onekash.kashcal.reminder.notification.ReminderNotificationManager
 import org.onekash.kashcal.util.CalendarIntentData
 import org.onekash.kashcal.util.CalendarIntentParser
+import org.onekash.kashcal.util.DateTimeUtils
 import javax.inject.Inject
 
 private const val TAG = "MainActivity"
@@ -464,9 +465,11 @@ class MainActivity : ComponentActivity() {
                             val shareText = buildString {
                                 appendLine(event.title)
 
-                                // Format date/time
+                                // Format date/time - use user's time format preference
                                 val dateFormat = java.text.SimpleDateFormat("EEE, MMM d, yyyy", java.util.Locale.getDefault())
-                                val timeFormat = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
+                                val is24Hour = android.text.format.DateFormat.is24HourFormat(this@MainActivity)
+                                val timePattern = DateTimeUtils.getTimePattern(uiState.timeFormat, is24Hour)
+                                val timeFormat = java.text.SimpleDateFormat(timePattern, java.util.Locale.getDefault())
 
                                 if (event.isAllDay) {
                                     // All-day: Use UTC to get correct calendar date
@@ -539,7 +542,8 @@ class MainActivity : ComponentActivity() {
                                 quickViewEvent = null
                                 quickViewOccurrenceTs = null
                             }
-                        }
+                        },
+                        timeFormat = uiState.timeFormat
                     )
                 }
 
@@ -600,7 +604,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         },
-                        locationSuggestionService = locationSuggestionService
+                        locationSuggestionService = locationSuggestionService,
+                        timeFormat = uiState.timeFormat
                     )
                 }
 

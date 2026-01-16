@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 import org.onekash.kashcal.data.db.entity.Occurrence
+import org.onekash.kashcal.data.db.entity.OccurrenceWithEventData
 
 /**
  * Data Access Object for Occurrence operations.
@@ -68,6 +69,80 @@ interface OccurrencesDao {
         ORDER BY start_ts ASC
     """)
     suspend fun getForCalendarInRangeOnce(calendarId: Long, startTs: Long, endTs: Long): List<Occurrence>
+
+    // ========== JOIN Queries (Reactive to Event Changes) ==========
+
+    /**
+     * Get occurrences with event data in time range.
+     *
+     * IMPORTANT: Room tracks BOTH tables in this JOIN query, so the Flow emits
+     * when EITHER the occurrences OR events table changes. This fixes the
+     * reactivity issue where event metadata changes (location, title, etc.)
+     * didn't trigger UI updates.
+     *
+     * Uses e_ prefix for @Embedded(prefix = "e_") Event mapping.
+     *
+     * Exception handling: Uses OR condition to correctly select the exception
+     * event (if present) instead of the master event for modified occurrences.
+     */
+    @Query("""
+        SELECT o.id, o.event_id, o.exception_event_id, o.calendar_id,
+               o.start_ts, o.end_ts, o.start_day, o.end_day, o.is_cancelled,
+               e.id AS e_id, e.uid AS e_uid, e.calendar_id AS e_calendar_id,
+               e.title AS e_title, e.description AS e_description, e.location AS e_location,
+               e.start_ts AS e_start_ts, e.end_ts AS e_end_ts, e.is_all_day AS e_is_all_day,
+               e.timezone AS e_timezone, e.rrule AS e_rrule, e.exdate AS e_exdate, e.rdate AS e_rdate,
+               e.caldav_url AS e_caldav_url, e.etag AS e_etag, e.sync_status AS e_sync_status,
+               e.sequence AS e_sequence, e.reminders AS e_reminders,
+               e.original_event_id AS e_original_event_id, e.original_instance_time AS e_original_instance_time,
+               e.status AS e_status, e.transp AS e_transp, e.classification AS e_classification,
+               e.organizer_email AS e_organizer_email, e.organizer_name AS e_organizer_name,
+               e.duration AS e_duration, e.original_sync_id AS e_original_sync_id,
+               e.extra_properties AS e_extra_properties, e.dtstamp AS e_dtstamp,
+               e.last_sync_error AS e_last_sync_error, e.sync_retry_count AS e_sync_retry_count,
+               e.server_modified_at AS e_server_modified_at,
+               e.created_at AS e_created_at, e.updated_at AS e_updated_at, e.local_modified_at AS e_local_modified_at
+        FROM occurrences o
+        JOIN events e ON (o.exception_event_id IS NOT NULL AND o.exception_event_id = e.id)
+                      OR (o.exception_event_id IS NULL AND o.event_id = e.id)
+        WHERE o.end_ts >= :startTs AND o.start_ts <= :endTs
+        AND o.is_cancelled = 0
+        ORDER BY o.start_ts ASC
+    """)
+    fun getOccurrencesWithEventsInRange(startTs: Long, endTs: Long): Flow<List<OccurrenceWithEventData>>
+
+    /**
+     * Get occurrences with event data for a specific day.
+     *
+     * Same as getOccurrencesWithEventsInRange but uses day code (YYYYMMDD) for
+     * timezone-correct day matching. Uses start_day/end_day columns which are
+     * pre-calculated with proper timezone handling for all-day events.
+     */
+    @Query("""
+        SELECT o.id, o.event_id, o.exception_event_id, o.calendar_id,
+               o.start_ts, o.end_ts, o.start_day, o.end_day, o.is_cancelled,
+               e.id AS e_id, e.uid AS e_uid, e.calendar_id AS e_calendar_id,
+               e.title AS e_title, e.description AS e_description, e.location AS e_location,
+               e.start_ts AS e_start_ts, e.end_ts AS e_end_ts, e.is_all_day AS e_is_all_day,
+               e.timezone AS e_timezone, e.rrule AS e_rrule, e.exdate AS e_exdate, e.rdate AS e_rdate,
+               e.caldav_url AS e_caldav_url, e.etag AS e_etag, e.sync_status AS e_sync_status,
+               e.sequence AS e_sequence, e.reminders AS e_reminders,
+               e.original_event_id AS e_original_event_id, e.original_instance_time AS e_original_instance_time,
+               e.status AS e_status, e.transp AS e_transp, e.classification AS e_classification,
+               e.organizer_email AS e_organizer_email, e.organizer_name AS e_organizer_name,
+               e.duration AS e_duration, e.original_sync_id AS e_original_sync_id,
+               e.extra_properties AS e_extra_properties, e.dtstamp AS e_dtstamp,
+               e.last_sync_error AS e_last_sync_error, e.sync_retry_count AS e_sync_retry_count,
+               e.server_modified_at AS e_server_modified_at,
+               e.created_at AS e_created_at, e.updated_at AS e_updated_at, e.local_modified_at AS e_local_modified_at
+        FROM occurrences o
+        JOIN events e ON (o.exception_event_id IS NOT NULL AND o.exception_event_id = e.id)
+                      OR (o.exception_event_id IS NULL AND o.event_id = e.id)
+        WHERE o.start_day <= :day AND o.end_day >= :day
+        AND o.is_cancelled = 0
+        ORDER BY o.start_ts ASC
+    """)
+    fun getOccurrencesWithEventsForDay(day: Int): Flow<List<OccurrenceWithEventData>>
 
     /**
      * Get occurrences for specific day (YYYYMMDD format).

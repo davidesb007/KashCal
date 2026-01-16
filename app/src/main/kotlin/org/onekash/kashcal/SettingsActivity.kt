@@ -85,6 +85,7 @@ class SettingsActivity : ComponentActivity() {
                 val defaultReminderAllDay by viewModel.defaultReminderAllDay.collectAsStateWithLifecycle()
                 val defaultEventDuration by viewModel.defaultEventDuration.collectAsStateWithLifecycle()
                 val showEventEmojis by viewModel.showEventEmojis.collectAsStateWithLifecycle()
+                val timeFormat by viewModel.timeFormat.collectAsStateWithLifecycle()
 
                 // Contact birthdays state
                 val contactBirthdaysEnabled by viewModel.contactBirthdaysEnabled.collectAsStateWithLifecycle()
@@ -283,6 +284,8 @@ class SettingsActivity : ComponentActivity() {
                             // Display settings
                             showEventEmojis = showEventEmojis,
                             onShowEventEmojisChange = viewModel::setShowEventEmojis,
+                            timeFormat = timeFormat,
+                            onTimeFormatChange = viewModel::setTimeFormat,
                             // Version footer
                             versionName = BuildConfig.VERSION_NAME
                         )

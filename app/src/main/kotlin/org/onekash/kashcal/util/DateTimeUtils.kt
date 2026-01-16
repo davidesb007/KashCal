@@ -23,6 +23,49 @@ import java.util.Locale
  */
 object DateTimeUtils {
 
+    // ==================== Time Format Preference ====================
+
+    /**
+     * Time format preference enum for type-safe handling.
+     */
+    enum class TimeFormatPreference {
+        SYSTEM,
+        TWELVE_HOUR,
+        TWENTY_FOUR_HOUR;
+
+        companion object {
+            fun fromString(value: String): TimeFormatPreference = when (value) {
+                "12h" -> TWELVE_HOUR
+                "24h" -> TWENTY_FOUR_HOUR
+                else -> SYSTEM
+            }
+        }
+    }
+
+    /**
+     * Get the appropriate time pattern based on user preference and device setting.
+     *
+     * @param preference User's stored preference
+     * @param is24HourDevice Result of DateFormat.is24HourFormat(context)
+     * @return Pattern string for DateTimeFormatter ("h:mm a" or "HH:mm")
+     */
+    fun getTimePattern(preference: TimeFormatPreference, is24HourDevice: Boolean): String {
+        return when (preference) {
+            TimeFormatPreference.TWELVE_HOUR -> "h:mm a"
+            TimeFormatPreference.TWENTY_FOUR_HOUR -> "HH:mm"
+            TimeFormatPreference.SYSTEM -> if (is24HourDevice) "HH:mm" else "h:mm a"
+        }
+    }
+
+    /**
+     * Convenience overload that takes string preference directly.
+     */
+    fun getTimePattern(preferenceString: String, is24HourDevice: Boolean): String {
+        return getTimePattern(TimeFormatPreference.fromString(preferenceString), is24HourDevice)
+    }
+
+    // ==================== Date Conversion Functions ====================
+
     /**
      * Convert event timestamp to LocalDate.
      *
@@ -404,9 +447,9 @@ object DateTimeUtils {
      * @param minute Minute (0-59)
      * @return Formatted time string (e.g., "2:30 PM")
      */
-    fun formatTime(hour: Int, minute: Int): String {
+    fun formatTime(hour: Int, minute: Int, pattern: String = "h:mm a"): String {
         val localTime = java.time.LocalTime.of(hour, minute)
-        val formatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+        val formatter = DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
         return localTime.format(formatter)
     }
 }

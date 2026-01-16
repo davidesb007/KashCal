@@ -146,6 +146,9 @@ class AccountSettingsViewModel @Inject constructor(
     private val _showEventEmojis = MutableStateFlow(true)
     val showEventEmojis: StateFlow<Boolean> = _showEventEmojis.asStateFlow()
 
+    private val _timeFormat = MutableStateFlow(KashCalDataStore.TIME_FORMAT_SYSTEM)
+    val timeFormat: StateFlow<String> = _timeFormat.asStateFlow()
+
     init {
         loadInitialState()
         observeCalendars()
@@ -302,6 +305,11 @@ class AccountSettingsViewModel @Inject constructor(
                 _showEventEmojis.value = show
             }
         }
+        viewModelScope.launch {
+            dataStore.timeFormat.collect { format ->
+                _timeFormat.value = format
+            }
+        }
     }
 
     /**
@@ -310,6 +318,15 @@ class AccountSettingsViewModel @Inject constructor(
     fun setShowEventEmojis(show: Boolean) {
         viewModelScope.launch {
             dataStore.setShowEventEmojis(show)
+        }
+    }
+
+    /**
+     * Update the time format preference.
+     */
+    fun setTimeFormat(format: String) {
+        viewModelScope.launch {
+            dataStore.setTimeFormat(format)
         }
     }
 

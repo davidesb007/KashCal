@@ -53,6 +53,7 @@ import org.onekash.kashcal.data.contacts.ContactBirthdayRepository
 import org.onekash.kashcal.util.location.looksLikeAddress
 import org.onekash.kashcal.util.location.openInMaps
 import org.onekash.kashcal.data.contacts.ContactBirthdayUtils
+import android.text.format.DateFormat
 import org.onekash.kashcal.data.db.entity.Event
 import org.onekash.kashcal.domain.EmojiMatcher
 import org.onekash.kashcal.domain.rrule.RruleBuilder
@@ -93,7 +94,8 @@ fun EventQuickViewSheet(
     onDeleteFuture: () -> Unit = {},
     onDuplicate: () -> Unit = {},
     onShare: () -> Unit = {},
-    onExportIcs: () -> Unit = {}
+    onExportIcs: () -> Unit = {},
+    timeFormat: String = "system"
 ) {
     val sheetState = rememberModalBottomSheetState()
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -101,6 +103,13 @@ fun EventQuickViewSheet(
     var showEditConfirmation by remember { mutableStateOf(false) }
     var editAllOccurrences by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+
+    // Compute time pattern from preference
+    val context = LocalContext.current
+    val is24HourDevice = DateFormat.is24HourFormat(context)
+    val timePattern = remember(timeFormat, is24HourDevice) {
+        DateTimeUtils.getTimePattern(timeFormat, is24HourDevice)
+    }
 
     // Detect recurring events: master events have rrule, exception events have originalEventId
     val isRecurring = event.isRecurring || event.isException
@@ -161,7 +170,7 @@ fun EventQuickViewSheet(
                     val duration = event.endTs - event.startTs
                     val displayEndTs = if (occurrenceTs != null) occurrenceTs + duration else event.endTs
                     Text(
-                        text = formatEventDateTime(displayStartTs, displayEndTs, event.isAllDay),
+                        text = formatEventDateTime(displayStartTs, displayEndTs, event.isAllDay, timePattern),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -548,7 +557,12 @@ fun EventQuickViewSheet(
  * @see DateTimeUtils.formatEventDateShort
  * @see DateTimeUtils.formatEventTime
  */
-private fun formatEventDateTime(startTs: Long, endTs: Long, isAllDay: Boolean): String {
+private fun formatEventDateTime(
+    startTs: Long,
+    endTs: Long,
+    isAllDay: Boolean,
+    timePattern: String = "h:mm a"
+): String {
     // Use DateTimeUtils for correct timezone handling (UTC for all-day, local for timed)
     val startDateStr = DateTimeUtils.formatEventDateShort(startTs, isAllDay)
     val endDateStr = DateTimeUtils.formatEventDateShort(endTs, isAllDay)
@@ -561,8 +575,8 @@ private fun formatEventDateTime(startTs: Long, endTs: Long, isAllDay: Boolean): 
             "$startDateStr \u00b7 All day"
         }
     } else {
-        val startTime = DateTimeUtils.formatEventTime(startTs, isAllDay)
-        val endTime = DateTimeUtils.formatEventTime(endTs, isAllDay)
+        val startTime = DateTimeUtils.formatEventTime(startTs, isAllDay, timePattern)
+        val endTime = DateTimeUtils.formatEventTime(endTs, isAllDay, timePattern)
         if (isMultiDay) {
             // Multi-day timed: show both dates and times
             "$startDateStr $startTime \u2192 $endDateStr $endTime"

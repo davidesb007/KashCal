@@ -100,6 +100,10 @@ class HomeViewModel @Inject constructor(
     val defaultEventDuration: StateFlow<Int> = dataStore.defaultEventDuration
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), KashCalDataStore.DEFAULT_EVENT_DURATION_MINUTES)
 
+    /** Time format preference: "system", "12h", or "24h" */
+    val timeFormat: StateFlow<String> = dataStore.timeFormat
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), KashCalDataStore.TIME_FORMAT_SYSTEM)
+
     // Track if startup sync has been triggered
     private var hasTriggeredStartupSync = false
 
@@ -400,13 +404,18 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Observe display settings preference.
-     * Updates uiState when showEventEmojis preference changes.
+     * Observe display settings preferences.
+     * Updates uiState when showEventEmojis or timeFormat preferences change.
      */
     private fun observeDisplaySettings() {
         viewModelScope.launch {
             dataStore.showEventEmojis.collect { showEmojis ->
                 _uiState.update { it.copy(showEventEmojis = showEmojis) }
+            }
+        }
+        viewModelScope.launch {
+            dataStore.timeFormat.collect { format ->
+                _uiState.update { it.copy(timeFormat = format) }
             }
         }
     }
@@ -1324,8 +1333,12 @@ class HomeViewModel @Inject constructor(
      * start_day/end_day columns that are timezone-aware.
      *
      * PROGRESSIVE LOADING: Events appear as they sync because this uses Flow
-     * collection instead of one-shot query. Room Flow emits updates when
-     * occurrences table changes.
+     * collection instead of one-shot query.
+     *
+     * REACTIVITY FIX (v20.10.6): Uses JOIN-based query that tracks BOTH the
+     * occurrences AND events tables. This ensures that event metadata changes
+     * (location, title, description) trigger Flow emissions even when occurrence
+     * times don't change. Room automatically tracks all tables in a JOIN query.
      */
     private fun loadEventsForSelectedDay(dateMillis: Long) {
         // Cancel any previous day events observation
@@ -1339,29 +1352,16 @@ class HomeViewModel @Inject constructor(
         val dayCode = localDate.year * 10000 + localDate.monthValue * 100 + localDate.dayOfMonth
 
         // Start observing events for this day (reactive - updates as sync progresses)
+        // JOIN query includes Event data, so no separate event fetch needed
         dayEventsJob = viewModelScope.launch {
             try {
-                eventReader.getVisibleOccurrencesForDay(dayCode)
+                eventReader.getVisibleOccurrencesWithEventsForDay(dayCode)
                     .distinctUntilChanged()
-                    .map { occurrences ->
-                        // Load the actual events for these occurrences
-                        // CRITICAL: Use exceptionEventId if present, otherwise eventId
-                        // This ensures exception events are loaded (not master) so:
-                        // 1. UI shows exception's modified data (title, time, etc.)
-                        // 2. occurrenceMap lookup works in HomeScreen
-                        // 3. Edit operations get the correct event/occurrence context
-                        // Pattern matches EventReader.getEventsForDay() and HomeScreen.occurrenceMap
-                        // Uses batch query to avoid N+1 (1 query instead of N)
-                        val eventIds = occurrences.map { occ ->
-                            occ.exceptionEventId ?: occ.eventId
-                        }.distinct()
-                        val events = withContext(ioDispatcher) {
-                            val eventsMap = eventReader.getEventsByIds(eventIds)
-                            eventIds.mapNotNull { eventsMap[it] }
-                        }
-                        occurrences to events
-                    }
-                    .collect { (occurrences, events) ->
+                    .collect { occurrencesWithEvents ->
+                        // Events already available from JOIN query
+                        val occurrences = occurrencesWithEvents.map { it.occurrence }
+                        val events = occurrencesWithEvents.map { it.event }
+
                         _uiState.update {
                             it.copy(
                                 selectedDayOccurrences = occurrences.toPersistentList(),

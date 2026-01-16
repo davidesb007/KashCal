@@ -30,6 +30,7 @@ import org.onekash.kashcal.data.db.entity.Occurrence
 import org.onekash.kashcal.data.preferences.KashCalDataStore
 import org.onekash.kashcal.domain.coordinator.EventCoordinator
 import org.onekash.kashcal.domain.reader.EventReader
+import org.onekash.kashcal.domain.reader.EventReader.OccurrenceWithEvent
 import org.onekash.kashcal.network.NetworkMonitor
 import org.onekash.kashcal.sync.scheduler.SyncScheduler
 import org.onekash.kashcal.sync.scheduler.SyncStatus
@@ -61,6 +62,7 @@ class FlowTestingPatternsTest {
     // Controllable flows
     private lateinit var calendarsFlow: MutableStateFlow<List<Calendar>>
     private lateinit var occurrencesFlow: MutableStateFlow<List<Occurrence>>
+    private lateinit var occurrencesWithEventsFlow: MutableStateFlow<List<OccurrenceWithEvent>>
     private lateinit var networkStateFlow: MutableStateFlow<Boolean>
     private lateinit var syncStatusFlow: MutableStateFlow<SyncStatus>
     private lateinit var bannerFlagFlow: MutableStateFlow<Boolean>
@@ -103,6 +105,37 @@ class FlowTestingPatternsTest {
         )
     )
 
+    private val testEvents = listOf(
+        Event(
+            id = 1L,
+            uid = "event-1@test",
+            calendarId = 1L,
+            title = "Meeting",
+            startTs = 1704067200000L,
+            endTs = 1704070800000L,
+            dtstamp = System.currentTimeMillis()
+        ),
+        Event(
+            id = 2L,
+            uid = "event-2@test",
+            calendarId = 2L,
+            title = "Code Review",
+            startTs = 1704081600000L,
+            endTs = 1704085200000L,
+            dtstamp = System.currentTimeMillis()
+        )
+    )
+
+    private val testOccurrencesWithEvents by lazy {
+        testOccurrences.mapIndexed { index, occurrence ->
+            OccurrenceWithEvent(
+                occurrence = occurrence,
+                event = testEvents[index],
+                calendar = testCalendars.find { it.id == occurrence.calendarId }
+            )
+        }
+    }
+
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
@@ -117,6 +150,7 @@ class FlowTestingPatternsTest {
         // Initialize controllable flows
         calendarsFlow = MutableStateFlow(testCalendars)
         occurrencesFlow = MutableStateFlow(testOccurrences)
+        occurrencesWithEventsFlow = MutableStateFlow(testOccurrencesWithEvents)
         networkStateFlow = MutableStateFlow(true)
         syncStatusFlow = MutableStateFlow(SyncStatus.Idle)
         bannerFlagFlow = MutableStateFlow(false)
@@ -139,6 +173,7 @@ class FlowTestingPatternsTest {
         coEvery { authManager.loadAccount() } returns null
         coEvery { eventReader.getVisibleOccurrencesInRange(any(), any()) } returns occurrencesFlow
         every { eventReader.getVisibleOccurrencesForDay(any()) } returns occurrencesFlow
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(any()) } returns occurrencesWithEventsFlow
     }
 
     @After
@@ -318,7 +353,7 @@ class FlowTestingPatternsTest {
     @Test
     fun `UI updates progressively as occurrences are emitted`() = runTest {
         // Start with empty
-        occurrencesFlow.value = emptyList()
+        occurrencesWithEventsFlow.value = emptyList()
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -329,14 +364,14 @@ class FlowTestingPatternsTest {
 
         assertEquals(0, viewModel.uiState.value.selectedDayOccurrences.size)
 
-        // First occurrence arrives
-        occurrencesFlow.value = listOf(testOccurrences[0])
+        // First occurrence arrives (with event via JOIN)
+        occurrencesWithEventsFlow.value = listOf(testOccurrencesWithEvents[0])
         advanceUntilIdle()
 
         assertEquals(1, viewModel.uiState.value.selectedDayOccurrences.size)
 
-        // Second occurrence arrives
-        occurrencesFlow.value = testOccurrences
+        // Second occurrence arrives (with event via JOIN)
+        occurrencesWithEventsFlow.value = testOccurrencesWithEvents
         advanceUntilIdle()
 
         assertEquals(2, viewModel.uiState.value.selectedDayOccurrences.size)
@@ -364,13 +399,13 @@ class FlowTestingPatternsTest {
 
     @Test
     fun `Flow error does not crash ViewModel`() = runTest {
-        // Create a flow that throws an error
-        val errorFlow = flow<List<Occurrence>> {
-            emit(testOccurrences)
+        // Create a flow that throws an error (uses JOIN-based flow type)
+        val errorFlow = flow<List<OccurrenceWithEvent>> {
+            emit(testOccurrencesWithEvents)
             throw RuntimeException("Test error")
         }
 
-        every { eventReader.getVisibleOccurrencesForDay(any()) } returns errorFlow
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(any()) } returns errorFlow
 
         val viewModel = createViewModel()
         advanceUntilIdle()

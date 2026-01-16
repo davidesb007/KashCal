@@ -188,11 +188,12 @@ fun <T> VerticalWheelPicker(
 }
 
 /**
- * iOS-style time picker with separate wheels for hours, minutes, and AM/PM.
+ * iOS-style time picker with separate wheels for hours, minutes, and optionally AM/PM.
  *
  * @param selectedHour Hour in 24-hour format (0-23) - internal state
  * @param selectedMinute Minute (0-59)
  * @param onTimeSelected Callback with (hour24, minute)
+ * @param use24Hour If true, shows 2 wheels (00-23, minutes). If false, shows 3 wheels (1-12, minutes, AM/PM)
  * @param minuteInterval Interval for minute options (default 5)
  */
 @Composable
@@ -201,131 +202,209 @@ fun WheelTimePicker(
     selectedMinute: Int,
     onTimeSelected: (hour: Int, minute: Int) -> Unit,
     modifier: Modifier = Modifier,
+    use24Hour: Boolean = false,
     minuteInterval: Int = 5,
     visibleItems: Int = 5,
     itemHeight: Dp = 36.dp
 ) {
-    // Convert 24-hour to 12-hour format
-    val hour12 = when {
-        selectedHour == 0 -> 12
-        selectedHour > 12 -> selectedHour - 12
-        else -> selectedHour
-    }
-    val isPM = selectedHour >= 12
-
-    // State for each wheel
-    var currentHour12 by remember(selectedHour) { mutableIntStateOf(hour12) }
+    // State for minute (same in both modes)
     var currentMinute by remember(selectedMinute) { mutableIntStateOf(selectedMinute) }
-    var currentIsPM by remember(selectedHour) { mutableStateOf(isPM) }
 
-    // Generate options
-    val hourOptions = (1..12).toList()
+    // Generate minute options (same for both modes)
     val minuteOptions = (0..55 step minuteInterval).toList()
-    val amPmOptions = listOf("AM", "PM")
-
-    // Snap minute to nearest interval
     val closestMinute = minuteOptions.minByOrNull { abs(it - currentMinute) } ?: 0
+
     LaunchedEffect(selectedMinute) {
         if (currentMinute != closestMinute) {
             currentMinute = closestMinute
         }
     }
 
-    // Callback when any wheel changes
-    fun notifyTimeChange() {
-        val hour24 = when {
-            currentHour12 == 12 && !currentIsPM -> 0      // 12 AM = 0
-            currentHour12 == 12 && currentIsPM -> 12      // 12 PM = 12
-            currentIsPM -> currentHour12 + 12             // 1-11 PM = 13-23
-            else -> currentHour12                          // 1-11 AM = 1-11
+    if (use24Hour) {
+        // ========== 24-HOUR MODE: 2 wheels ==========
+        var currentHour24 by remember(selectedHour) { mutableIntStateOf(selectedHour) }
+        val hourOptions = (0..23).toList()
+
+        fun notifyTimeChange() {
+            onTimeSelected(currentHour24, currentMinute)
         }
-        onTimeSelected(hour24, currentMinute)
-    }
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Three wheels in a row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Hour wheel
-            VerticalWheelPicker(
-                items = hourOptions,
-                selectedItem = currentHour12,
-                onItemSelected = { hour ->
-                    currentHour12 = hour
-                    notifyTimeChange()
-                },
-                modifier = Modifier.weight(1f),
-                visibleItems = visibleItems,
-                itemHeight = itemHeight
-            ) { hour, isSelected ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Hour wheel (00-23)
+                VerticalWheelPicker(
+                    items = hourOptions,
+                    selectedItem = currentHour24,
+                    onItemSelected = { hour ->
+                        currentHour24 = hour
+                        notifyTimeChange()
+                    },
+                    modifier = Modifier.weight(1f),
+                    visibleItems = visibleItems,
+                    itemHeight = itemHeight
+                ) { hour, isSelected ->
+                    Text(
+                        text = String.format("%02d", hour),  // Zero-padded
+                        fontSize = if (isSelected) 18.sp else 14.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // Colon separator
                 Text(
-                    text = hour.toString(),
-                    fontSize = if (isSelected) 18.sp else 14.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+                    text = ":",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+
+                // Minute wheel
+                VerticalWheelPicker(
+                    items = minuteOptions,
+                    selectedItem = currentMinute,
+                    onItemSelected = { minute ->
+                        currentMinute = minute
+                        notifyTimeChange()
+                    },
+                    modifier = Modifier.weight(1f),
+                    visibleItems = visibleItems,
+                    itemHeight = itemHeight
+                ) { minute, isSelected ->
+                    Text(
+                        text = String.format("%02d", minute),
+                        fontSize = if (isSelected) 18.sp else 14.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
+        }
+    } else {
+        // ========== 12-HOUR MODE: 3 wheels ==========
+        // Convert 24-hour to 12-hour format
+        val hour12 = when {
+            selectedHour == 0 -> 12
+            selectedHour > 12 -> selectedHour - 12
+            else -> selectedHour
+        }
+        val isPM = selectedHour >= 12
 
-            // Colon separator
-            Text(
-                text = ":",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+        var currentHour12 by remember(selectedHour) { mutableIntStateOf(hour12) }
+        var currentIsPM by remember(selectedHour) { mutableStateOf(isPM) }
 
-            // Minute wheel
-            VerticalWheelPicker(
-                items = minuteOptions,
-                selectedItem = currentMinute,
-                onItemSelected = { minute ->
-                    currentMinute = minute
-                    notifyTimeChange()
-                },
-                modifier = Modifier.weight(1f),
-                visibleItems = visibleItems,
-                itemHeight = itemHeight
-            ) { minute, isSelected ->
-                Text(
-                    text = String.format("%02d", minute),
-                    fontSize = if (isSelected) 18.sp else 14.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
-                )
+        val hourOptions = (1..12).toList()
+        // Use localized AM/PM strings
+        val amPmStrings = remember { java.text.DateFormatSymbols.getInstance().amPmStrings }
+        val amPmOptions = amPmStrings.toList()
+
+        fun notifyTimeChange() {
+            val hour24 = when {
+                currentHour12 == 12 && !currentIsPM -> 0      // 12 AM = 0
+                currentHour12 == 12 && currentIsPM -> 12      // 12 PM = 12
+                currentIsPM -> currentHour12 + 12             // 1-11 PM = 13-23
+                else -> currentHour12                          // 1-11 AM = 1-11
             }
+            onTimeSelected(hour24, currentMinute)
+        }
 
-            // AM/PM wheel
-            VerticalWheelPicker(
-                items = amPmOptions,
-                selectedItem = if (currentIsPM) "PM" else "AM",
-                onItemSelected = { amPm ->
-                    currentIsPM = amPm == "PM"
-                    notifyTimeChange()
-                },
-                modifier = Modifier.weight(0.8f),
-                visibleItems = visibleItems,
-                itemHeight = itemHeight
-            ) { amPm, isSelected ->
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Hour wheel (1-12)
+                VerticalWheelPicker(
+                    items = hourOptions,
+                    selectedItem = currentHour12,
+                    onItemSelected = { hour ->
+                        currentHour12 = hour
+                        notifyTimeChange()
+                    },
+                    modifier = Modifier.weight(1f),
+                    visibleItems = visibleItems,
+                    itemHeight = itemHeight
+                ) { hour, isSelected ->
+                    Text(
+                        text = hour.toString(),
+                        fontSize = if (isSelected) 18.sp else 14.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // Colon separator
                 Text(
-                    text = amPm,
-                    fontSize = if (isSelected) 16.sp else 12.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+                    text = ":",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+
+                // Minute wheel
+                VerticalWheelPicker(
+                    items = minuteOptions,
+                    selectedItem = currentMinute,
+                    onItemSelected = { minute ->
+                        currentMinute = minute
+                        notifyTimeChange()
+                    },
+                    modifier = Modifier.weight(1f),
+                    visibleItems = visibleItems,
+                    itemHeight = itemHeight
+                ) { minute, isSelected ->
+                    Text(
+                        text = String.format("%02d", minute),
+                        fontSize = if (isSelected) 18.sp else 14.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // AM/PM wheel
+                VerticalWheelPicker(
+                    items = amPmOptions,
+                    selectedItem = if (currentIsPM) amPmOptions[1] else amPmOptions[0],
+                    onItemSelected = { amPm ->
+                        currentIsPM = amPm == amPmOptions[1]
+                        notifyTimeChange()
+                    },
+                    modifier = Modifier.weight(0.8f),
+                    visibleItems = visibleItems,
+                    itemHeight = itemHeight
+                ) { amPm, isSelected ->
+                    Text(
+                        text = amPm,
+                        fontSize = if (isSelected) 16.sp else 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }

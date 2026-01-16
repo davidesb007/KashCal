@@ -77,6 +77,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Calendar as JavaCalendar
 import org.onekash.kashcal.util.DateTimeUtils
+import android.text.format.DateFormat
+import androidx.compose.ui.platform.LocalContext
 import org.onekash.kashcal.ui.shared.REMINDER_OFF
 import org.onekash.kashcal.ui.shared.getReminderOptionsForEventType
 import org.onekash.kashcal.ui.shared.ALL_DAY_REMINDER_OPTIONS
@@ -192,10 +194,26 @@ fun EventFormSheet(
     defaultReminderAllDay: Int = 1440,
     defaultEventDuration: Int = 30,
     onRequestNotificationPermission: ((onResult: (Boolean) -> Unit) -> Unit)? = null,
-    locationSuggestionService: LocationSuggestionService? = null
+    locationSuggestionService: LocationSuggestionService? = null,
+    timeFormat: String = "system"
 ) {
     val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+
+    // Compute time pattern from preference
+    val context = LocalContext.current
+    val is24HourDevice = DateFormat.is24HourFormat(context)
+    val timePattern = remember(timeFormat, is24HourDevice) {
+        DateTimeUtils.getTimePattern(timeFormat, is24HourDevice)
+    }
+    // Determine if 24-hour mode should be used (for time picker wheels)
+    val use24Hour = remember(timeFormat, is24HourDevice) {
+        when (timeFormat) {
+            "12h" -> false
+            "24h" -> true
+            else -> is24HourDevice  // "system" follows device setting
+        }
+    }
 
     // Form state
     var state by remember { mutableStateOf(EventFormState()) }
@@ -691,7 +709,8 @@ fun EventFormSheet(
                         minute = state.startMinute,
                         isAllDay = state.isAllDay,
                         onClick = { activeSheet = ActiveDateTimeSheet.START },
-                        timezone = state.timezone
+                        timezone = state.timezone,
+                        timePattern = timePattern
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -706,7 +725,8 @@ fun EventFormSheet(
                         onClick = { activeSheet = ActiveDateTimeSheet.END },
                         isError = hasTimeConflict,
                         errorMessage = if (hasTimeConflict) "End time must be after start time" else null,
-                        timezone = state.timezone
+                        timezone = state.timezone,
+                        timePattern = timePattern
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -996,6 +1016,7 @@ fun EventFormSheet(
             selectedMinute = state.startMinute,
             selectedTimezone = state.timezone,
             isAllDay = state.isAllDay,
+            use24Hour = use24Hour,
             onConfirm = { dateMillis, hour, minute, timezone ->
                 // Normalize to midnight for all-day events to prevent timezone date shift
                 val normalizedDateMillis = if (state.isAllDay) normalizeToLocalMidnight(dateMillis) else dateMillis
@@ -1074,6 +1095,7 @@ fun EventFormSheet(
             selectedMinute = state.endMinute,
             selectedTimezone = state.timezone,
             isAllDay = state.isAllDay,
+            use24Hour = use24Hour,
             onConfirm = { dateMillis, hour, minute, timezone ->
                 // Normalize to midnight for all-day events to prevent timezone date shift
                 val normalizedDateMillis = if (state.isAllDay) normalizeToLocalMidnight(dateMillis) else dateMillis

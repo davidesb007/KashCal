@@ -32,6 +32,7 @@ import org.onekash.kashcal.data.db.entity.Occurrence
 import org.onekash.kashcal.data.preferences.KashCalDataStore
 import org.onekash.kashcal.domain.coordinator.EventCoordinator
 import org.onekash.kashcal.domain.reader.EventReader
+import org.onekash.kashcal.domain.reader.EventReader.OccurrenceWithEvent
 import org.onekash.kashcal.network.NetworkMonitor
 import org.onekash.kashcal.sync.scheduler.SyncScheduler
 import org.onekash.kashcal.sync.scheduler.SyncStatus
@@ -140,6 +141,16 @@ class HomeViewModelTest {
         }
     }
 
+    private val testOccurrencesWithEvents by lazy {
+        testOccurrences.mapIndexed { index, occurrence ->
+            OccurrenceWithEvent(
+                occurrence = occurrence,
+                event = testEvents[index],
+                calendar = testCalendars.find { it.id == occurrence.calendarId }
+            )
+        }
+    }
+
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
@@ -180,6 +191,7 @@ class HomeViewModelTest {
         coEvery { authManager.loadAccount() } returns null
         coEvery { eventReader.getVisibleOccurrencesInRange(any(), any()) } returns flowOf(testOccurrences)
         every { eventReader.getVisibleOccurrencesForDay(any()) } returns flowOf(testOccurrences)
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(any()) } returns flowOf(testOccurrencesWithEvents)
         coEvery { eventReader.getEventById(1L) } returns testEvents[0]
         coEvery { eventReader.getEventById(2L) } returns testEvents[1]
         coEvery { eventReader.getEventsByIds(any()) } coAnswers {
@@ -444,7 +456,7 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         // Uses dayCode-based query (YYYYMMDD) for proper all-day event handling
-        verify { eventReader.getVisibleOccurrencesForDay(any()) }
+        verify { eventReader.getVisibleOccurrencesWithEventsForDay(any()) }
         assertEquals(2, viewModel.uiState.value.selectedDayOccurrences.size)
         assertEquals(2, viewModel.uiState.value.selectedDayEvents.size)
     }
@@ -1432,8 +1444,8 @@ class HomeViewModelTest {
         viewModel.deleteEventOptimistic(1L)
         advanceUntilIdle()
 
-        // Verify reloadCurrentView was called (via getVisibleOccurrencesForDay)
-        verify(atLeast = 1) { eventReader.getVisibleOccurrencesForDay(any()) }
+        // Verify reloadCurrentView was called (via getVisibleOccurrencesWithEventsForDay)
+        verify(atLeast = 1) { eventReader.getVisibleOccurrencesWithEventsForDay(any()) }
     }
 
     @Test
@@ -1583,7 +1595,7 @@ class HomeViewModelTest {
 
         // NOW reloadCurrentView should be called, which queries occurrences
         // Uses dayCode-based query for selected day events
-        verify(atLeast = 1) { eventReader.getVisibleOccurrencesForDay(any()) }
+        verify(atLeast = 1) { eventReader.getVisibleOccurrencesWithEventsForDay(any()) }
     }
 
     @Test
@@ -1667,7 +1679,8 @@ class HomeViewModelTest {
             isAllDay = true,
             dtstamp = System.currentTimeMillis()
         )
-        every { eventReader.getVisibleOccurrencesForDay(20241217) } returns flowOf(listOf(allDayOccurrence))
+        val allDayOccWithEvent = OccurrenceWithEvent(allDayOccurrence, allDayEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241217) } returns flowOf(listOf(allDayOccWithEvent))
         coEvery { eventReader.getEventById(10L) } returns allDayEvent
 
         val viewModel = createViewModel()
@@ -1679,7 +1692,7 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         // Should use dayCode-based query
-        verify { eventReader.getVisibleOccurrencesForDay(20241217) }
+        verify { eventReader.getVisibleOccurrencesWithEventsForDay(20241217) }
         assertEquals(1, viewModel.uiState.value.selectedDayOccurrences.size)
         assertEquals("Holiday", viewModel.uiState.value.selectedDayEvents[0].title)
     }
@@ -1708,7 +1721,8 @@ class HomeViewModelTest {
         )
 
         // Should appear on day 18 (middle day)
-        every { eventReader.getVisibleOccurrencesForDay(20241218) } returns flowOf(listOf(multiDayOccurrence))
+        val multiDayOccWithEvent = OccurrenceWithEvent(multiDayOccurrence, multiDayEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241218) } returns flowOf(listOf(multiDayOccWithEvent))
         coEvery { eventReader.getEventById(11L) } returns multiDayEvent
 
         val viewModel = createViewModel()
@@ -1782,7 +1796,8 @@ class HomeViewModelTest {
             dtstamp = System.currentTimeMillis()
         )
 
-        every { eventReader.getVisibleOccurrencesForDay(20241218) } returns flowOf(listOf(multiDayTimedOccurrence))
+        val multiDayTimedOccWithEvent = OccurrenceWithEvent(multiDayTimedOccurrence, multiDayTimedEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241218) } returns flowOf(listOf(multiDayTimedOccWithEvent))
         coEvery { eventReader.getEventById(12L) } returns multiDayTimedEvent
 
         val viewModel = createViewModel()
@@ -1846,7 +1861,9 @@ class HomeViewModelTest {
             endDay = 20241217
         )
 
-        every { eventReader.getVisibleOccurrencesForDay(20241217) } returns flowOf(listOf(exceptionOccurrence))
+        // JOIN query returns exception event (due to exceptionEventId match in JOIN condition)
+        val exceptionOccWithEvent = OccurrenceWithEvent(exceptionOccurrence, exceptionEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241217) } returns flowOf(listOf(exceptionOccWithEvent))
         coEvery { eventReader.getEventById(100L) } returns masterEvent
         coEvery { eventReader.getEventById(101L) } returns exceptionEvent
 
@@ -1892,7 +1909,9 @@ class HomeViewModelTest {
             endDay = 20241210
         )
 
-        every { eventReader.getVisibleOccurrencesForDay(20241210) } returns flowOf(listOf(normalOccurrence))
+        // JOIN query returns master event (since exceptionEventId is null)
+        val normalOccWithEvent = OccurrenceWithEvent(normalOccurrence, masterEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241210) } returns flowOf(listOf(normalOccWithEvent))
         coEvery { eventReader.getEventById(100L) } returns masterEvent
 
         val viewModel = createViewModel()
@@ -1967,8 +1986,11 @@ class HomeViewModelTest {
             endDay = 20241217
         )
 
-        every { eventReader.getVisibleOccurrencesForDay(20241217) } returns
-            flowOf(listOf(normalOccurrence, exceptionOccurrence))
+        // JOIN query returns correct events: normal -> masterEvent1, exception -> exceptionEvent
+        val normalOccWithEvent = OccurrenceWithEvent(normalOccurrence, masterEvent1, testCalendars[0])
+        val exceptionOccWithEvent = OccurrenceWithEvent(exceptionOccurrence, exceptionEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241217) } returns
+            flowOf(listOf(normalOccWithEvent, exceptionOccWithEvent))
         coEvery { eventReader.getEventById(100L) } returns masterEvent1
         coEvery { eventReader.getEventById(200L) } returns masterEvent2
         coEvery { eventReader.getEventById(201L) } returns exceptionEvent
@@ -2041,7 +2063,8 @@ class HomeViewModelTest {
             endDay = 20241217
         )
 
-        every { eventReader.getVisibleOccurrencesForDay(20241217) } returns flowOf(listOf(exceptionOccurrence))
+        val exceptionOccWithEvent = OccurrenceWithEvent(exceptionOccurrence, exceptionEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241217) } returns flowOf(listOf(exceptionOccWithEvent))
         coEvery { eventReader.getEventById(100L) } returns masterEvent
         coEvery { eventReader.getEventById(101L) } returns exceptionEvent
 
@@ -2100,7 +2123,8 @@ class HomeViewModelTest {
             endDay = 20241217
         )
 
-        every { eventReader.getVisibleOccurrencesForDay(20241217) } returns flowOf(listOf(exceptionOccurrence))
+        val exceptionOccWithEvent = OccurrenceWithEvent(exceptionOccurrence, exceptionEvent, testCalendars[0])
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(20241217) } returns flowOf(listOf(exceptionOccWithEvent))
         coEvery { eventReader.getEventById(100L) } returns masterEvent
         coEvery { eventReader.getEventById(101L) } returns exceptionEvent
 

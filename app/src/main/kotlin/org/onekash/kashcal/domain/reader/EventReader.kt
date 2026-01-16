@@ -2,9 +2,11 @@ package org.onekash.kashcal.domain.reader
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import org.onekash.kashcal.data.db.KashCalDatabase
+import org.onekash.kashcal.data.db.entity.OccurrenceWithEventData
 import org.onekash.kashcal.data.db.dao.EventWithNextOccurrence
 import org.onekash.kashcal.data.db.dao.EventWithOccurrenceAndColor
 import org.onekash.kashcal.data.db.entity.Calendar
@@ -264,6 +266,40 @@ class EventReader @Inject constructor(
         }.distinctUntilChanged()
     }
 
+    /**
+     * Get visible occurrences WITH event data for specific day (YYYYMMDD format).
+     *
+     * Similar to getVisibleOccurrencesForDay but includes event details directly.
+     * Uses JOIN query so Room tracks BOTH tables - emits when occurrences OR events change.
+     *
+     * This fixes the reactivity issue where event metadata changes (location, title, etc.)
+     * didn't trigger UI updates in the day events list.
+     *
+     * Uses debounce(50) to batch rapid updates during sync.
+     *
+     * @param day Day code in YYYYMMDD format (e.g., 20241225 for Dec 25, 2024)
+     * @return Flow of OccurrenceWithEvent list, filtered by visible calendars
+     */
+    @Suppress("OPT_IN_USAGE")
+    fun getVisibleOccurrencesWithEventsForDay(day: Int): Flow<List<OccurrenceWithEvent>> {
+        return combine(
+            getVisibleCalendars(),
+            occurrencesDao.getOccurrencesWithEventsForDay(day)
+        ) { calendars, data ->
+            val visibleCalendarIds = calendars.map { it.id }.toSet()
+            val calendarsMap = calendars.associateBy { it.id }
+
+            data.filter { it.calendarId in visibleCalendarIds }
+                .map { item ->
+                    OccurrenceWithEvent(
+                        occurrence = item.toOccurrence(),
+                        event = item.event,
+                        calendar = calendarsMap[item.calendarId]
+                    )
+                }
+        }.debounce(50)
+    }
+
     // ========== Event with Occurrence Data ==========
 
     /**
@@ -306,34 +342,38 @@ class EventReader @Inject constructor(
     /**
      * Get occurrences with full event details for date range (reactive Flow).
      *
-     * Returns a Flow that automatically emits updates when occurrences change.
+     * Returns a Flow that automatically emits updates when occurrences OR events change.
      * Used for progressive UI updates during sync - events appear as they're synced.
-     * Uses batch loading to avoid N+1 queries (3 queries per emission instead of 2N+1).
+     *
+     * IMPORTANT: Uses JOIN query so Room tracks BOTH tables. This fixes the reactivity
+     * issue where event metadata changes (location, title, etc.) didn't trigger UI updates.
+     *
+     * Uses debounce(50) to batch rapid updates during bulk sync (prevents 500 emissions
+     * for 500 event updates).
      *
      * Android best practice: Use Flow for observable data sources.
      * See: https://developer.android.com/topic/architecture/data-layer/offline-first
      */
+    @Suppress("OPT_IN_USAGE")
     fun getOccurrencesWithEventsInRangeFlow(
         startTs: Long,
         endTs: Long
     ): Flow<List<OccurrenceWithEvent>> {
-        return occurrencesDao.getInRange(startTs, endTs)
-            .map { occurrences ->
-                if (occurrences.isEmpty()) return@map emptyList()
+        return occurrencesDao.getOccurrencesWithEventsInRange(startTs, endTs)
+            .debounce(50)  // Batch rapid updates during sync
+            .map { data ->
+                if (data.isEmpty()) return@map emptyList()
 
-                // Batch load events (1 query instead of N)
-                val eventIds = occurrences.map { it.exceptionEventId ?: it.eventId }.distinct()
-                val eventsMap = eventsDao.getByIds(eventIds).associateBy { it.id }
-
-                // Batch load calendars (1 query instead of N)
-                val calendarIds = occurrences.map { it.calendarId }.distinct()
+                // Batch load calendars (still needed - not in JOIN)
+                val calendarIds = data.map { it.calendarId }.distinct()
                 val calendarsMap = calendarsDao.getByIds(calendarIds).associateBy { it.id }
 
-                occurrences.mapNotNull { occ ->
-                    val eventId = occ.exceptionEventId ?: occ.eventId
-                    val event = eventsMap[eventId] ?: return@mapNotNull null
-                    val calendar = calendarsMap[occ.calendarId]
-                    OccurrenceWithEvent(occ, event, calendar)
+                data.map { item ->
+                    OccurrenceWithEvent(
+                        occurrence = item.toOccurrence(),
+                        event = item.event,  // Already available via @Embedded
+                        calendar = calendarsMap[item.calendarId]
+                    )
                 }
             }
     }

@@ -106,7 +106,8 @@ fun DateTimePickerCard(
     modifier: Modifier = Modifier,
     isError: Boolean = false,
     errorMessage: String? = null,
-    timezone: String? = null
+    timezone: String? = null,
+    timePattern: String = "h:mm a"
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -120,7 +121,7 @@ fun DateTimePickerCard(
         append(formatDateForPicker(dateMillis, isAllDay))
         if (!isAllDay) {
             append("   ")
-            append(DateTimeUtils.formatTime(hour, minute))
+            append(DateTimeUtils.formatTime(hour, minute, timePattern))
         }
     }
 
@@ -214,6 +215,7 @@ fun DateTimeSheet(
     selectedMinute: Int,
     selectedTimezone: String? = null,
     isAllDay: Boolean,
+    use24Hour: Boolean = false,
     onConfirm: (dateMillis: Long, hour: Int, minute: Int, timezone: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -322,6 +324,7 @@ fun DateTimeSheet(
                                 localHour = h
                                 localMinute = m
                             },
+                            use24Hour = use24Hour,
                             visibleItems = 3,
                             itemHeight = 32.dp,
                             modifier = Modifier.fillMaxWidth()

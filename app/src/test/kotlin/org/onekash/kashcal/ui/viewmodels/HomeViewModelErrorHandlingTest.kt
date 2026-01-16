@@ -104,6 +104,7 @@ class HomeViewModelErrorHandlingTest {
         coEvery { authManager.loadAccount() } returns null
         coEvery { eventReader.getVisibleOccurrencesInRange(any(), any()) } returns flowOf(emptyList())
         every { eventReader.getVisibleOccurrencesForDay(any()) } returns flowOf(emptyList())
+        every { eventReader.getVisibleOccurrencesWithEventsForDay(any()) } returns flowOf(emptyList())
     }
 
     @After

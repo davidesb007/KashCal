@@ -87,6 +87,9 @@ object PreferencesKeys {
     /** Show auto-detected emojis in event titles */
     val SHOW_EVENT_EMOJIS = booleanPreferencesKey("show_event_emojis")
 
+    /** Time format preference: "system", "12h", or "24h" */
+    val TIME_FORMAT = stringPreferencesKey("time_format")
+
     // ========== Migration Flags ==========
 
     /** Data migration from v1 completed */

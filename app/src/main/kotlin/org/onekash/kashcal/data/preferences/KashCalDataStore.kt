@@ -284,6 +284,24 @@ class KashCalDataStore(private val context: Context) {
         setPreference(PreferencesKeys.SHOW_EVENT_EMOJIS, show)
     }
 
+    /**
+     * Time format preference.
+     * - "system": Follow device's 24-hour setting
+     * - "12h": Always 12-hour (2:30 PM)
+     * - "24h": Always 24-hour (14:30)
+     */
+    val timeFormat: Flow<String>
+        get() = getPreference(PreferencesKeys.TIME_FORMAT, TIME_FORMAT_SYSTEM)
+
+    suspend fun getTimeFormat(): String = timeFormat.first()
+
+    suspend fun setTimeFormat(format: String) {
+        require(format in setOf(TIME_FORMAT_SYSTEM, TIME_FORMAT_12H, TIME_FORMAT_24H)) {
+            "Invalid time format: $format"
+        }
+        setPreference(PreferencesKeys.TIME_FORMAT, format)
+    }
+
     // ========== Migration Flags ==========
 
     val migrationV1Completed: Flow<Boolean>
@@ -507,5 +525,10 @@ class KashCalDataStore(private val context: Context) {
         const val VIEW_WEEK = "week"
         const val VIEW_MONTH = "month"
         const val VIEW_AGENDA = "agenda"
+
+        // Time format values
+        const val TIME_FORMAT_SYSTEM = "system"
+        const val TIME_FORMAT_12H = "12h"
+        const val TIME_FORMAT_24H = "24h"
     }
 }

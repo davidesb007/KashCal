@@ -56,8 +56,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.text.format.DateFormat
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.persistentListOf
@@ -164,6 +166,13 @@ fun HomeScreen(
     val initialPage = 600
     val pagerState = rememberPagerState(initialPage = initialPage) { 1200 }
     val coroutineScope = rememberCoroutineScope()
+
+    // Time format pattern based on user preference and device setting
+    val context = LocalContext.current
+    val is24HourDevice = DateFormat.is24HourFormat(context)
+    val timePattern = remember(uiState.timeFormat, is24HourDevice) {
+        DateTimeUtils.getTimePattern(uiState.timeFormat, is24HourDevice)
+    }
 
     // Handle system back button - close overlays before closing app
     // Priority: Search (if active) > Agenda (if active) > Default (close app)
@@ -323,6 +332,7 @@ fun HomeScreen(
                                 calendars = uiState.calendars,
                                 currentFilter = uiState.searchDateFilter,
                                 showEventEmojis = uiState.showEventEmojis,
+                                timePattern = timePattern,
                                 onResultClick = onSearchResultClick,
                                 onFilterSelect = onSearchDateFilterChange,
                                 onCustomDateClick = onSearchShowDatePicker
@@ -363,6 +373,7 @@ fun HomeScreen(
                                                 calendars = uiState.calendars,
                                                 listState = agendaListState,
                                                 showEventEmojis = uiState.showEventEmojis,
+                                                timePattern = timePattern,
                                                 onEventClick = { event, occurrenceTs ->
                                                     onEventClick(event, occurrenceTs)
                                                 }
@@ -498,6 +509,7 @@ fun HomeScreen(
                                         monthPagerInitialPage = initialPage,
                                         todayYear = todayYear,
                                         todayMonth = todayMonth,
+                                        timePattern = timePattern,
                                         onEventClick = onEventClick,
                                         onDateSelected = onDateSelected,
                                         onLoadEventsForRange = onLoadEventsForDayPagerRange,
@@ -857,6 +869,7 @@ private fun ColumnScope.DayEventsPager(
     monthPagerInitialPage: Int,
     todayYear: Int,
     todayMonth: Int,
+    timePattern: String = "h:mm a",
     onEventClick: (Event, Long?) -> Unit,
     onDateSelected: (Long) -> Unit,
     onLoadEventsForRange: (Long) -> Unit,
@@ -955,6 +968,7 @@ private fun ColumnScope.DayEventsPager(
                 events = events,
                 calendars = calendars,
                 showEventEmojis = uiState.showEventEmojis,
+                timePattern = timePattern,
                 isLoading = !isLoaded && uiState.cacheRangeCenter != 0L,
                 onEventClick = onEventClick
             )
@@ -971,6 +985,7 @@ private fun DayEventsPage(
     events: ImmutableList<OccurrenceWithEvent>,
     calendars: ImmutableList<Calendar>,
     showEventEmojis: Boolean,
+    timePattern: String = "h:mm a",
     isLoading: Boolean,
     onEventClick: (Event, Long?) -> Unit
 ) {
@@ -1025,6 +1040,7 @@ private fun DayEventsPage(
                         selectedDate = dateMs,
                         occurrenceTs = occurrence.startTs,
                         showEventEmojis = showEventEmojis,
+                        timePattern = timePattern,
                         onClick = { onEventClick(event, occurrence.startTs) }
                     )
                 }
@@ -1041,6 +1057,7 @@ private fun EventCard(
     selectedDate: Long,
     occurrenceTs: Long?,
     showEventEmojis: Boolean = true,
+    timePattern: String = "h:mm a",
     onClick: () -> Unit
 ) {
     val displayTitle = remember(event, occurrenceTs, showEventEmojis) {
@@ -1068,7 +1085,7 @@ private fun EventCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                val timeText = formatEventTimeDisplay(event, selectedDate)
+                val timeText = formatEventTimeDisplay(event, selectedDate, timePattern = timePattern)
                 Text(
                     timeText,
                     style = MaterialTheme.typography.bodySmall,
@@ -1092,13 +1109,14 @@ private fun SearchResultCard(
     eventColor: Color,
     isPast: Boolean,
     showEventEmojis: Boolean = true,
+    timePattern: String = "h:mm a",
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // For recurring events with nextOccurrenceTs, show "Next: date" format
     // For non-recurring events, keep original format
-    val dateString = remember(event, nextOccurrenceTs) {
-        formatSearchResultDateWithOccurrence(event, nextOccurrenceTs)
+    val dateString = remember(event, nextOccurrenceTs, timePattern) {
+        formatSearchResultDateWithOccurrence(event, nextOccurrenceTs, timePattern = timePattern)
     }
 
     // Format title with age for birthday events and optional emoji
@@ -1156,6 +1174,7 @@ private fun SearchContent(
     calendars: ImmutableList<Calendar>,
     currentFilter: DateFilter,
     showEventEmojis: Boolean = true,
+    timePattern: String = "h:mm a",
     onResultClick: (Event, Long?) -> Unit,
     onFilterSelect: (DateFilter) -> Unit,
     onCustomDateClick: () -> Unit
@@ -1229,6 +1248,7 @@ private fun SearchContent(
                         eventColor = eventColor,
                         isPast = isPast,
                         showEventEmojis = showEventEmojis,
+                        timePattern = timePattern,
                         onClick = { onResultClick(event, result.nextOccurrenceTs) }
                     )
                 }
@@ -1315,6 +1335,7 @@ private fun AgendaContent(
     calendars: ImmutableList<Calendar>,
     listState: LazyListState = rememberLazyListState(),
     showEventEmojis: Boolean = true,
+    timePattern: String = "h:mm a",
     onEventClick: (Event, Long) -> Unit  // (event, occurrenceStartTs)
 ) {
     val colorMap = remember(calendars) { calendars.associate { it.id to Color(it.color) } }
@@ -1396,6 +1417,7 @@ private fun AgendaContent(
                         eventColor = eventColor,
                         isPast = isPast,
                         showEventEmojis = showEventEmojis,
+                        timePattern = timePattern,
                         onClick = { onEventClick(item.occWithEvent.event, item.occWithEvent.occurrence.startTs) }
                     )
                 }
@@ -1415,11 +1437,12 @@ private fun AgendaCard(
     eventColor: Color,
     isPast: Boolean,
     showEventEmojis: Boolean = true,
+    timePattern: String = "h:mm a",
     onClick: () -> Unit
 ) {
     val event = item.occWithEvent.event
     val occurrence = item.occWithEvent.occurrence
-    val dateString = formatAgendaCardDate(event, occurrence, item.dayNumber, item.totalDays)
+    val dateString = formatAgendaCardDate(event, occurrence, item.dayNumber, item.totalDays, timePattern)
 
     // Format title with age for birthday events and optional emoji
     val displayTitle = remember(event, occurrence.startTs, showEventEmojis) {
@@ -1521,9 +1544,10 @@ private fun formatAgendaCardDate(
     event: Event,
     occurrence: Occurrence,
     dayNumber: Int,
-    totalDays: Int
+    totalDays: Int,
+    timePattern: String = "h:mm a"
 ): String {
-    val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+    val timeFormat = SimpleDateFormat(timePattern, Locale.getDefault())
     val isRecurring = event.isRecurring || event.isException
     val recurringIndicator = if (isRecurring) " \uD83D\uDD01" else ""
 
@@ -1564,9 +1588,10 @@ private fun formatAgendaCardDate(
 internal fun formatEventTimeDisplay(
     event: Event,
     selectedDateMillis: Long,
-    zoneId: ZoneId = ZoneId.systemDefault()
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    timePattern: String = "h:mm a"
 ): String {
-    val timeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+    val timeFormatter = DateTimeFormatter.ofPattern(timePattern, Locale.getDefault())
 
     // Use DateTimeUtils for correct timezone handling:
     // - All-day events use UTC to preserve calendar date
@@ -1648,14 +1673,16 @@ private fun calculateCurrentDayForEvent(
  *
  * @param event The event to format
  * @param zoneId Timezone for date calculations (injectable for testing)
+ * @param timePattern Time format pattern (default "h:mm a" for 12-hour)
  * @return Formatted date string for search/agenda display
  */
 internal fun formatSearchResultDate(
     event: Event,
-    zoneId: ZoneId = ZoneId.systemDefault()
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    timePattern: String = "h:mm a"
 ): String {
     val dateFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
-    val timeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+    val timeFormatter = DateTimeFormatter.ofPattern(timePattern, Locale.getDefault())
 
     // Convert timestamps to LocalDate with correct timezone handling
     val startDate = DateTimeUtils.eventTsToLocalDate(event.startTs, event.isAllDay, zoneId)
@@ -1691,23 +1718,25 @@ internal fun formatSearchResultDate(
  * @param event The event to format
  * @param nextOccurrenceTs Next occurrence timestamp for recurring events (null for non-recurring)
  * @param zoneId Timezone for date calculations (injectable for testing)
+ * @param timePattern Time format pattern (default "h:mm a" for 12-hour)
  * @return Formatted date string for search display
  */
 internal fun formatSearchResultDateWithOccurrence(
     event: Event,
     nextOccurrenceTs: Long?,
-    zoneId: ZoneId = ZoneId.systemDefault()
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    timePattern: String = "h:mm a"
 ): String {
     val isRecurring = event.isRecurring || event.isException
 
     // For non-recurring events or missing nextOccurrenceTs, use existing format
     if (!isRecurring || nextOccurrenceTs == null) {
-        return formatSearchResultDate(event, zoneId)
+        return formatSearchResultDate(event, zoneId, timePattern)
     }
 
     // For recurring events with nextOccurrenceTs, show "Next: date" format
     val dateFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
-    val timeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+    val timeFormatter = DateTimeFormatter.ofPattern(timePattern, Locale.getDefault())
 
     val nextDate = Instant.ofEpochMilli(nextOccurrenceTs)
         .atZone(zoneId)
