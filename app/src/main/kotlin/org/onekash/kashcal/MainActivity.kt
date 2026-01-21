@@ -73,6 +73,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var locationSuggestionService: LocationSuggestionService
 
+    @Inject
+    lateinit var icsFileReader: IcsFileReader
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate")
@@ -141,10 +144,6 @@ class MainActivity : ComponentActivity() {
                     uiState.pendingAction?.let { action ->
                         Log.d(TAG, "Processing pending action: $action")
 
-                        // Clear action FIRST to prevent re-triggering on exception
-                        // (follows Android Architecture recommended pattern)
-                        homeViewModel.clearPendingAction()
-
                         try {
                             when (action) {
                                 is PendingAction.ShowEventQuickView -> {
@@ -186,7 +185,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 is PendingAction.ImportIcsFile -> {
                                     Log.d(TAG, "Processing ICS file import: ${action.uri}")
-                                    val result = IcsFileReader.readIcsContent(this@MainActivity, action.uri)
+                                    val result = icsFileReader.readIcsContent(action.uri)
                                     result.onSuccess { content ->
                                         try {
                                             val events = RfcIcsParser.parseIcsContent(
@@ -222,9 +221,15 @@ class MainActivity : ComponentActivity() {
                                     showEventFormSheet = true
                                 }
                             }
+                            // IMPORTANT: clearPendingAction() must be called AFTER all suspend work
+                            // completes. Calling it before changes the LaunchedEffect key, cancelling
+                            // the coroutine at the next suspension point.
+                            // See: developer.android.com/topic/architecture/ui-layer/events
+                            homeViewModel.clearPendingAction()
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             throw e  // Don't catch cancellation
                         } catch (e: Exception) {
+                            homeViewModel.clearPendingAction()  // Clear on error too
                             Log.e(TAG, "Error processing pending action: $action", e)
                             val message = e.message?.take(50) ?: "Unknown error"
                             homeViewModel.showSnackbar("Action failed: $message")

@@ -19,6 +19,7 @@ import org.onekash.kashcal.data.db.KashCalDatabase
 import org.onekash.kashcal.data.db.entity.Account
 import org.onekash.kashcal.data.db.entity.Calendar
 import org.onekash.kashcal.data.db.entity.Event
+import org.onekash.kashcal.data.db.entity.Occurrence
 import org.onekash.kashcal.data.db.entity.SyncStatus
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -735,39 +736,6 @@ class EventsDaoTest {
         assertEquals(3, eventsDao.getTotalCount())
     }
 
-    // ==================== Helper Functions ====================
-
-    private fun createTestEvent(
-        uid: String = "test-${System.nanoTime()}@test.com",
-        title: String = "Test Event",
-        description: String? = null,
-        calendarId: Long = this.calendarId,
-        startTs: Long = parseDate("2025-01-15 10:00"),
-        endTs: Long = parseDate("2025-01-15 11:00"),
-        rrule: String? = null,
-        exdate: String? = null,
-        syncStatus: SyncStatus = SyncStatus.SYNCED,
-        originalEventId: Long? = null,
-        originalInstanceTime: Long? = null,
-        caldavUrl: String? = null,
-        sequence: Int = 0
-    ) = Event(
-        uid = uid,
-        calendarId = calendarId,
-        title = title,
-        description = description,
-        startTs = startTs,
-        endTs = endTs,
-        dtstamp = System.currentTimeMillis(),
-        rrule = rrule,
-        exdate = exdate,
-        syncStatus = syncStatus,
-        originalEventId = originalEventId,
-        originalInstanceTime = originalInstanceTime,
-        caldavUrl = caldavUrl,
-        sequence = sequence
-    )
-
     private fun parseDate(dateStr: String): Long {
         val parts = dateStr.split(" ")
         val dateParts = parts[0].split("-")
@@ -785,4 +753,491 @@ class EventsDaoTest {
         calendar.set(java.util.Calendar.MILLISECOND, 0)
         return calendar.timeInMillis
     }
+
+    private fun toDayCode(dateStr: String): Int {
+        val dateParts = dateStr.split("-")
+        return dateParts[0].toInt() * 10000 + dateParts[1].toInt() * 100 + dateParts[2].toInt()
+    }
+
+    // ==================== getEventsWithRemindersInRange Tests ====================
+
+    /**
+     * Test suite for the complex UNION query used by ReminderScheduler.
+     * This query finds events with reminders that have occurrences in a time window,
+     * handling both events with their own reminders and exception events that inherit.
+     */
+
+    @Test
+    fun `getEventsWithRemindersInRange returns event with reminders`() = runTest {
+        val eventTime = parseDate("2025-01-15 10:00")
+        val eventId = eventsDao.insert(createTestEvent(
+            title = "Meeting with reminder",
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            reminders = listOf("-PT15M")
+        ))
+
+        // Create occurrence for the event
+        database.occurrencesDao().insert(Occurrence(
+            eventId = eventId,
+            calendarId = calendarId,
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            startDay = toDayCode("2025-01-15"),
+            endDay = toDayCode("2025-01-15")
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("Meeting with reminder", results[0].event.title)
+        assertEquals(eventTime, results[0].occurrenceStartTs)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange excludes events without reminders`() = runTest {
+        val eventTime = parseDate("2025-01-15 10:00")
+        val eventId = eventsDao.insert(createTestEvent(
+            title = "No reminder",
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            reminders = null
+        ))
+
+        database.occurrencesDao().insert(Occurrence(
+            eventId = eventId,
+            calendarId = calendarId,
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            startDay = toDayCode("2025-01-15"),
+            endDay = toDayCode("2025-01-15")
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(0, results.size)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange excludes events with empty reminders array`() = runTest {
+        val eventTime = parseDate("2025-01-15 10:00")
+        val eventId = eventsDao.insert(createTestEvent(
+            title = "Empty reminder array",
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            reminders = emptyList()
+        ))
+
+        database.occurrencesDao().insert(Occurrence(
+            eventId = eventId,
+            calendarId = calendarId,
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            startDay = toDayCode("2025-01-15"),
+            endDay = toDayCode("2025-01-15")
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(0, results.size)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange excludes cancelled occurrences`() = runTest {
+        val eventTime = parseDate("2025-01-15 10:00")
+        val eventId = eventsDao.insert(createTestEvent(
+            title = "Cancelled occurrence",
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            reminders = listOf("-PT15M")
+        ))
+
+        database.occurrencesDao().insert(Occurrence(
+            eventId = eventId,
+            calendarId = calendarId,
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            startDay = toDayCode("2025-01-15"),
+            endDay = toDayCode("2025-01-15"),
+            isCancelled = true
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(0, results.size)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange excludes hidden calendars`() = runTest {
+        // Hide the calendar
+        database.calendarsDao().setVisible(calendarId, false)
+
+        val eventTime = parseDate("2025-01-15 10:00")
+        val eventId = eventsDao.insert(createTestEvent(
+            title = "Hidden calendar event",
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            reminders = listOf("-PT15M")
+        ))
+
+        database.occurrencesDao().insert(Occurrence(
+            eventId = eventId,
+            calendarId = calendarId,
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            startDay = toDayCode("2025-01-15"),
+            endDay = toDayCode("2025-01-15")
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(0, results.size)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange returns exception with its own reminders`() = runTest {
+        val masterTime = parseDate("2025-01-15 10:00")
+        val masterId = eventsDao.insert(createTestEvent(
+            title = "Master",
+            startTs = masterTime,
+            endTs = masterTime + 3600000,
+            rrule = "FREQ=DAILY",
+            reminders = listOf("-PT15M")
+        ))
+
+        // Exception with its own reminders (different from master)
+        val exceptionTime = parseDate("2025-01-16 14:00")
+        val exceptionId = eventsDao.insert(createTestEvent(
+            uid = eventsDao.getById(masterId)!!.uid, // Same UID as master (RFC 5545)
+            title = "Modified occurrence",
+            startTs = exceptionTime,
+            endTs = exceptionTime + 3600000,
+            originalEventId = masterId,
+            originalInstanceTime = parseDate("2025-01-16 10:00"),
+            reminders = listOf("-PT30M", "-PT1H") // Different reminders
+        ))
+
+        // Create occurrence that links to exception
+        database.occurrencesDao().insert(Occurrence(
+            eventId = masterId,
+            calendarId = calendarId,
+            startTs = exceptionTime,
+            endTs = exceptionTime + 3600000,
+            startDay = toDayCode("2025-01-16"),
+            endDay = toDayCode("2025-01-16"),
+            exceptionEventId = exceptionId
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-16 00:00"),
+            parseDate("2025-01-16 23:59")
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("Modified occurrence", results[0].event.title)
+        assertEquals(listOf("-PT30M", "-PT1H"), results[0].event.reminders)
+        assertEquals(exceptionId, results[0].targetEventId)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange exception inherits reminders from master`() = runTest {
+        val masterTime = parseDate("2025-01-15 10:00")
+        val masterId = eventsDao.insert(createTestEvent(
+            title = "Master with reminder",
+            startTs = masterTime,
+            endTs = masterTime + 3600000,
+            rrule = "FREQ=DAILY",
+            reminders = listOf("-PT15M")
+        ))
+
+        // Exception with NO reminders (should inherit from master)
+        val exceptionTime = parseDate("2025-01-16 14:00")
+        val exceptionId = eventsDao.insert(createTestEvent(
+            uid = eventsDao.getById(masterId)!!.uid,
+            title = "Exception inherits reminders",
+            startTs = exceptionTime,
+            endTs = exceptionTime + 3600000,
+            originalEventId = masterId,
+            originalInstanceTime = parseDate("2025-01-16 10:00"),
+            reminders = null // No own reminders - inherits from master
+        ))
+
+        // Create occurrence linked to exception
+        database.occurrencesDao().insert(Occurrence(
+            eventId = masterId,
+            calendarId = calendarId,
+            startTs = exceptionTime,
+            endTs = exceptionTime + 3600000,
+            startDay = toDayCode("2025-01-16"),
+            endDay = toDayCode("2025-01-16"),
+            exceptionEventId = exceptionId
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-16 00:00"),
+            parseDate("2025-01-16 23:59")
+        )
+
+        // The UNION query's second branch should find this:
+        // Exception with no reminders + master WITH reminders = returns master's reminders
+        assertEquals(1, results.size)
+        assertEquals(listOf("-PT15M"), results[0].event.reminders)
+        // targetEventId should point to exception (for click handling)
+        assertEquals(exceptionId, results[0].targetEventId)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange exception with empty array inherits from master`() = runTest {
+        val masterTime = parseDate("2025-01-15 10:00")
+        val masterId = eventsDao.insert(createTestEvent(
+            title = "Master",
+            startTs = masterTime,
+            endTs = masterTime + 3600000,
+            rrule = "FREQ=DAILY",
+            reminders = listOf("-PT15M")
+        ))
+
+        // Exception with empty reminders array (should also inherit)
+        val exceptionTime = parseDate("2025-01-16 14:00")
+        val exceptionId = eventsDao.insert(createTestEvent(
+            uid = eventsDao.getById(masterId)!!.uid,
+            title = "Exception with empty array",
+            startTs = exceptionTime,
+            endTs = exceptionTime + 3600000,
+            originalEventId = masterId,
+            originalInstanceTime = parseDate("2025-01-16 10:00"),
+            reminders = emptyList() // Empty array - should inherit
+        ))
+
+        database.occurrencesDao().insert(Occurrence(
+            eventId = masterId,
+            calendarId = calendarId,
+            startTs = exceptionTime,
+            endTs = exceptionTime + 3600000,
+            startDay = toDayCode("2025-01-16"),
+            endDay = toDayCode("2025-01-16"),
+            exceptionEventId = exceptionId
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-16 00:00"),
+            parseDate("2025-01-16 23:59")
+        )
+
+        assertEquals(1, results.size)
+        assertEquals(listOf("-PT15M"), results[0].event.reminders)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange filters by time range`() = runTest {
+        // Event in range
+        val inRangeTime = parseDate("2025-01-15 10:00")
+        val inRangeId = eventsDao.insert(createTestEvent(
+            title = "In range",
+            startTs = inRangeTime,
+            endTs = inRangeTime + 3600000,
+            reminders = listOf("-PT15M")
+        ))
+        database.occurrencesDao().insert(Occurrence(
+            eventId = inRangeId,
+            calendarId = calendarId,
+            startTs = inRangeTime,
+            endTs = inRangeTime + 3600000,
+            startDay = toDayCode("2025-01-15"),
+            endDay = toDayCode("2025-01-15")
+        ))
+
+        // Event before range
+        val beforeTime = parseDate("2025-01-14 10:00")
+        val beforeId = eventsDao.insert(createTestEvent(
+            title = "Before range",
+            startTs = beforeTime,
+            endTs = beforeTime + 3600000,
+            reminders = listOf("-PT15M")
+        ))
+        database.occurrencesDao().insert(Occurrence(
+            eventId = beforeId,
+            calendarId = calendarId,
+            startTs = beforeTime,
+            endTs = beforeTime + 3600000,
+            startDay = toDayCode("2025-01-14"),
+            endDay = toDayCode("2025-01-14")
+        ))
+
+        // Event after range
+        val afterTime = parseDate("2025-01-16 10:00")
+        val afterId = eventsDao.insert(createTestEvent(
+            title = "After range",
+            startTs = afterTime,
+            endTs = afterTime + 3600000,
+            reminders = listOf("-PT15M")
+        ))
+        database.occurrencesDao().insert(Occurrence(
+            eventId = afterId,
+            calendarId = calendarId,
+            startTs = afterTime,
+            endTs = afterTime + 3600000,
+            startDay = toDayCode("2025-01-16"),
+            endDay = toDayCode("2025-01-16")
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("In range", results[0].event.title)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange returns calendar color`() = runTest {
+        val eventTime = parseDate("2025-01-15 10:00")
+        val eventId = eventsDao.insert(createTestEvent(
+            title = "Event",
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            reminders = listOf("-PT15M")
+        ))
+
+        database.occurrencesDao().insert(Occurrence(
+            eventId = eventId,
+            calendarId = calendarId,
+            startTs = eventTime,
+            endTs = eventTime + 3600000,
+            startDay = toDayCode("2025-01-15"),
+            endDay = toDayCode("2025-01-15")
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(1, results.size)
+        // Calendar color was set to 0xFF0000FF (blue) in setup
+        assertEquals(0xFF0000FF.toInt(), results[0].calendarColor)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange returns occurrence times not event times`() = runTest {
+        // Recurring event: master at 10 AM
+        val masterTime = parseDate("2025-01-15 10:00")
+        val masterId = eventsDao.insert(createTestEvent(
+            title = "Recurring",
+            startTs = masterTime,
+            endTs = masterTime + 3600000,
+            rrule = "FREQ=DAILY",
+            reminders = listOf("-PT15M")
+        ))
+
+        // This occurrence is the second occurrence (Jan 16)
+        val occurrenceTime = parseDate("2025-01-16 10:00")
+        database.occurrencesDao().insert(Occurrence(
+            eventId = masterId,
+            calendarId = calendarId,
+            startTs = occurrenceTime,
+            endTs = occurrenceTime + 3600000,
+            startDay = toDayCode("2025-01-16"),
+            endDay = toDayCode("2025-01-16")
+        ))
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-16 00:00"),
+            parseDate("2025-01-16 23:59")
+        )
+
+        assertEquals(1, results.size)
+        // Should return occurrence time, not master event's start time
+        assertEquals(occurrenceTime, results[0].occurrenceStartTs)
+        assertEquals(occurrenceTime + 3600000, results[0].occurrenceEndTs)
+    }
+
+    @Test
+    fun `getEventsWithRemindersInRange results ordered by occurrence time`() = runTest {
+        // Create events with different occurrence times
+        val times = listOf(
+            parseDate("2025-01-15 14:00"),
+            parseDate("2025-01-15 09:00"),
+            parseDate("2025-01-15 11:00")
+        )
+
+        times.forEachIndexed { index, time ->
+            val eventId = eventsDao.insert(createTestEvent(
+                title = "Event $index",
+                startTs = time,
+                endTs = time + 3600000,
+                reminders = listOf("-PT15M")
+            ))
+            database.occurrencesDao().insert(Occurrence(
+                eventId = eventId,
+                calendarId = calendarId,
+                startTs = time,
+                endTs = time + 3600000,
+                startDay = toDayCode("2025-01-15"),
+                endDay = toDayCode("2025-01-15")
+            ))
+        }
+
+        val results = eventsDao.getEventsWithRemindersInRange(
+            parseDate("2025-01-15 00:00"),
+            parseDate("2025-01-15 23:59")
+        )
+
+        assertEquals(3, results.size)
+        // Should be ordered by occurrence time ASC
+        assertEquals(parseDate("2025-01-15 09:00"), results[0].occurrenceStartTs)
+        assertEquals(parseDate("2025-01-15 11:00"), results[1].occurrenceStartTs)
+        assertEquals(parseDate("2025-01-15 14:00"), results[2].occurrenceStartTs)
+    }
+
+    // ==================== Helper Functions ====================
+
+    private fun createTestEvent(
+        uid: String = "test-${System.nanoTime()}@test.com",
+        title: String = "Test Event",
+        description: String? = null,
+        calendarId: Long = this.calendarId,
+        startTs: Long = parseDate("2025-01-15 10:00"),
+        endTs: Long = parseDate("2025-01-15 11:00"),
+        rrule: String? = null,
+        exdate: String? = null,
+        syncStatus: SyncStatus = SyncStatus.SYNCED,
+        originalEventId: Long? = null,
+        originalInstanceTime: Long? = null,
+        caldavUrl: String? = null,
+        sequence: Int = 0,
+        reminders: List<String>? = null
+    ) = Event(
+        uid = uid,
+        calendarId = calendarId,
+        title = title,
+        description = description,
+        startTs = startTs,
+        endTs = endTs,
+        dtstamp = System.currentTimeMillis(),
+        rrule = rrule,
+        exdate = exdate,
+        syncStatus = syncStatus,
+        originalEventId = originalEventId,
+        originalInstanceTime = originalInstanceTime,
+        caldavUrl = caldavUrl,
+        sequence = sequence,
+        reminders = reminders
+    )
 }

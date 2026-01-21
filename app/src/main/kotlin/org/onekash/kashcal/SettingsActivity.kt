@@ -67,6 +67,9 @@ class SettingsActivity : ComponentActivity() {
     @Inject
     lateinit var syncSessionStore: SyncSessionStore
 
+    @Inject
+    lateinit var icsFileReader: IcsFileReader
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate")
@@ -142,7 +145,7 @@ class SettingsActivity : ComponentActivity() {
                 ) { uri ->
                     uri?.let { selectedUri ->
                         coroutineScope.launch {
-                            IcsFileReader.readIcsContent(this@SettingsActivity, selectedUri)
+                            icsFileReader.readIcsContent(selectedUri)
                                 .onSuccess { content ->
                                     try {
                                         val events = RfcIcsParser.parseIcsContent(content, 0, 0)

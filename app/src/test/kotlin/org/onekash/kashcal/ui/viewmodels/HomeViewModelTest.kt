@@ -2657,6 +2657,273 @@ class HomeViewModelTest {
         assertEquals(null, viewModel.uiState.value.pendingWeekViewPagerPosition)
     }
 
+    // ==================== Navigation Tests ====================
+
+    @Test
+    fun `navigateToMonth updates viewing month and year`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.navigateToMonth(2025, 6) // July 2025
+        advanceUntilIdle()
+
+        assertEquals(2025, viewModel.uiState.value.viewingYear)
+        assertEquals(6, viewModel.uiState.value.viewingMonth)
+        assertEquals(2025 to 6, viewModel.uiState.value.pendingNavigateToMonth)
+    }
+
+    @Test
+    fun `clearNavigateToMonth clears the pending navigation`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.navigateToMonth(2025, 6)
+        advanceUntilIdle()
+        assertEquals(2025 to 6, viewModel.uiState.value.pendingNavigateToMonth)
+
+        viewModel.clearNavigateToMonth()
+        advanceUntilIdle()
+        assertEquals(null, viewModel.uiState.value.pendingNavigateToMonth)
+    }
+
+    @Test
+    fun `navigateToDate updates viewing month and year`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val targetDate = java.time.LocalDate.of(2025, 3, 15)
+        viewModel.navigateToDate(targetDate)
+        advanceUntilIdle()
+
+        assertEquals(2025, viewModel.uiState.value.viewingYear)
+        assertEquals(2, viewModel.uiState.value.viewingMonth) // 0-indexed
+        // Also triggers date selection and sets pending navigation
+        assertEquals(2025 to 2, viewModel.uiState.value.pendingNavigateToMonth)
+    }
+
+    @Test
+    fun `navigateToWeek updates week view start date`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        // Week starting Jan 13, 2025 (Monday)
+        val weekStartMs = java.time.LocalDate.of(2025, 1, 13)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+
+        viewModel.navigateToWeek(weekStartMs)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.weekViewStartDate > 0)
+    }
+
+    @Test
+    fun `navigateToPreviousWeek calls goToTodayWeek when weekViewStartDate is zero`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        // weekViewStartDate starts at 0
+        assertEquals(0L, viewModel.uiState.value.weekViewStartDate)
+
+        // Navigate to previous week - should trigger goToTodayWeek() since start is 0
+        viewModel.navigateToPreviousWeek()
+        advanceUntilIdle()
+
+        // Should have pending pager position at center (from goToTodayWeek)
+        val centerPage = org.onekash.kashcal.ui.components.weekview.WeekViewUtils.CENTER_DAY_PAGE
+        assertEquals(centerPage, viewModel.uiState.value.pendingWeekViewPagerPosition)
+    }
+
+    @Test
+    fun `navigateToNextWeek calls goToTodayWeek when weekViewStartDate is zero`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        // weekViewStartDate starts at 0
+        assertEquals(0L, viewModel.uiState.value.weekViewStartDate)
+
+        // Navigate to next week - should trigger goToTodayWeek() since start is 0
+        viewModel.navigateToNextWeek()
+        advanceUntilIdle()
+
+        // Should have pending pager position at center (from goToTodayWeek)
+        val centerPage = org.onekash.kashcal.ui.components.weekview.WeekViewUtils.CENTER_DAY_PAGE
+        assertEquals(centerPage, viewModel.uiState.value.pendingWeekViewPagerPosition)
+    }
+
+    @Test
+    fun `goToTodayWeek sets pending pager position to center`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.goToTodayWeek()
+        advanceUntilIdle()
+
+        // Should have pending pager position at center
+        val centerPage = org.onekash.kashcal.ui.components.weekview.WeekViewUtils.CENTER_DAY_PAGE
+        assertEquals(centerPage, viewModel.uiState.value.pendingWeekViewPagerPosition)
+        // onDayPagerPageChanged also updates weekViewPagerPosition
+        assertEquals(centerPage, viewModel.uiState.value.weekViewPagerPosition)
+    }
+
+    @Test
+    fun `setWeekViewScrollPosition updates scroll position`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setWeekViewScrollPosition(500)
+        advanceUntilIdle()
+
+        assertEquals(500, viewModel.uiState.value.weekViewScrollPosition)
+    }
+
+    @Test
+    fun `setWeekViewPagerPosition updates pager position`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setWeekViewPagerPosition(100)
+        advanceUntilIdle()
+
+        assertEquals(100, viewModel.uiState.value.weekViewPagerPosition)
+    }
+
+    @Test
+    fun `setViewingMonth updates month without triggering navigation`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setViewingMonth(2025, 11) // December 2025
+        advanceUntilIdle()
+
+        assertEquals(2025, viewModel.uiState.value.viewingYear)
+        assertEquals(11, viewModel.uiState.value.viewingMonth)
+        // Should NOT set pendingNavigateToMonth (this is for swipe callbacks)
+        assertEquals(null, viewModel.uiState.value.pendingNavigateToMonth)
+    }
+
+    @Test
+    fun `goToTodayInDayPager returns center page and triggers load`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val resultPage = viewModel.goToTodayInDayPager()
+        advanceUntilIdle()
+
+        val centerPage = org.onekash.kashcal.ui.components.weekview.WeekViewUtils.CENTER_DAY_PAGE
+        assertEquals(centerPage, resultPage)
+        // onDayPagerPageChanged updates weekViewPagerPosition
+        assertEquals(centerPage, viewModel.uiState.value.weekViewPagerPosition)
+    }
+
+    @Test
+    fun `navigateDayPagerToDate returns correct page and triggers load`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        // Navigate to 10 days from today
+        val today = java.time.LocalDate.now()
+        val targetDate = today.plusDays(10)
+        val targetMs = targetDate.atStartOfDay(java.time.ZoneId.systemDefault())
+            .plusHours(12)
+            .toInstant()
+            .toEpochMilli()
+
+        val resultPage = viewModel.navigateDayPagerToDate(targetMs)
+        advanceUntilIdle()
+
+        val expectedPage = org.onekash.kashcal.ui.components.weekview.WeekViewUtils.CENTER_DAY_PAGE + 10
+        assertEquals(expectedPage, resultPage)
+        // Also updates weekViewPagerPosition via onDayPagerPageChanged
+        assertEquals(expectedPage, viewModel.uiState.value.weekViewPagerPosition)
+    }
+
+    @Test
+    fun `navigateDayPagerToDate handles past dates correctly`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        // Navigate to 5 days in the past
+        val today = java.time.LocalDate.now()
+        val targetDate = today.minusDays(5)
+        val targetMs = targetDate.atStartOfDay(java.time.ZoneId.systemDefault())
+            .plusHours(12)
+            .toInstant()
+            .toEpochMilli()
+
+        val resultPage = viewModel.navigateDayPagerToDate(targetMs)
+        advanceUntilIdle()
+
+        val expectedPage = org.onekash.kashcal.ui.components.weekview.WeekViewUtils.CENTER_DAY_PAGE - 5
+        assertEquals(expectedPage, resultPage)
+        // Also updates weekViewPagerPosition via onDayPagerPageChanged
+        assertEquals(expectedPage, viewModel.uiState.value.weekViewPagerPosition)
+    }
+
+    // ==================== Date Picker UI Tests ====================
+
+    @Test
+    fun `showWeekViewDatePicker sets flag to true`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showWeekViewDatePicker)
+
+        viewModel.showWeekViewDatePicker()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showWeekViewDatePicker)
+    }
+
+    @Test
+    fun `hideWeekViewDatePicker sets flag to false`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.showWeekViewDatePicker()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.showWeekViewDatePicker)
+
+        viewModel.hideWeekViewDatePicker()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showWeekViewDatePicker)
+    }
+
+    @Test
+    fun `showSearchDatePicker sets flag to true`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        // Activate search first
+        viewModel.activateSearch()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showSearchDatePicker)
+
+        viewModel.showSearchDatePicker()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showSearchDatePicker)
+    }
+
+    @Test
+    fun `hideSearchDatePicker sets flag to false`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.activateSearch()
+        viewModel.showSearchDatePicker()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.showSearchDatePicker)
+
+        viewModel.hideSearchDatePicker()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showSearchDatePicker)
+    }
+
     // ==================== Helper Functions ====================
 
     private fun getTimestamp(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long {

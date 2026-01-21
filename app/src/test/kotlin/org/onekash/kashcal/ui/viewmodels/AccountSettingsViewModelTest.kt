@@ -1223,6 +1223,217 @@ class AccountSettingsViewModelTest {
         }
     }
 
+    // ==================== Preferences Tests ====================
+
+    @Test
+    fun `setShowEventEmojis calls dataStore`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setShowEventEmojis(true)
+        advanceUntilIdle()
+
+        coVerify { dataStore.setShowEventEmojis(true) }
+    }
+
+    @Test
+    fun `setShowEventEmojis can be toggled off`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setShowEventEmojis(false)
+        advanceUntilIdle()
+
+        coVerify { dataStore.setShowEventEmojis(false) }
+    }
+
+    @Test
+    fun `setTimeFormat calls dataStore with format string`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setTimeFormat("24h")
+        advanceUntilIdle()
+
+        coVerify { dataStore.setTimeFormat("24h") }
+    }
+
+    @Test
+    fun `setTimeFormat accepts various formats`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setTimeFormat("12h")
+        advanceUntilIdle()
+        coVerify { dataStore.setTimeFormat("12h") }
+
+        viewModel.setTimeFormat("system")
+        advanceUntilIdle()
+        coVerify { dataStore.setTimeFormat("system") }
+    }
+
+    @Test
+    fun `setFirstDayOfWeek calls dataStore`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setFirstDayOfWeek(java.util.Calendar.MONDAY)
+        advanceUntilIdle()
+
+        coVerify { dataStore.setFirstDayOfWeek(java.util.Calendar.MONDAY) }
+    }
+
+    @Test
+    fun `setFirstDayOfWeek accepts sunday`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setFirstDayOfWeek(java.util.Calendar.SUNDAY)
+        advanceUntilIdle()
+
+        coVerify { dataStore.setFirstDayOfWeek(java.util.Calendar.SUNDAY) }
+    }
+
+    @Test
+    fun `onDefaultEventDurationChange calls userPreferences`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onDefaultEventDurationChange(30) // 30 minutes
+        advanceUntilIdle()
+
+        coVerify { userPreferences.setDefaultEventDuration(30) }
+    }
+
+    @Test
+    fun `onDefaultEventDurationChange accepts various durations`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onDefaultEventDurationChange(60) // 1 hour
+        advanceUntilIdle()
+        coVerify { userPreferences.setDefaultEventDuration(60) }
+
+        viewModel.onDefaultEventDurationChange(120) // 2 hours
+        advanceUntilIdle()
+        coVerify { userPreferences.setDefaultEventDuration(120) }
+    }
+
+    // ==================== Contact Birthdays Tests ====================
+
+    @Test
+    fun `onContactBirthdaysColorChange updates color via eventCoordinator`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val newColor = 0xFFE91E63.toInt() // Pink
+        viewModel.onContactBirthdaysColorChange(newColor)
+        advanceUntilIdle()
+
+        coVerify { eventCoordinator.updateContactBirthdaysColor(newColor) }
+    }
+
+    @Test
+    fun `onContactBirthdaysReminderChange calls dataStore`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onContactBirthdaysReminderChange(1440) // 1 day before
+        advanceUntilIdle()
+
+        coVerify { dataStore.setBirthdayReminder(1440) }
+    }
+
+    @Test
+    fun `onContactBirthdaysReminderChange accepts various reminder times`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onContactBirthdaysReminderChange(0) // At time of event
+        advanceUntilIdle()
+        coVerify { dataStore.setBirthdayReminder(0) }
+
+        viewModel.onContactBirthdaysReminderChange(10080) // 1 week before
+        advanceUntilIdle()
+        coVerify { dataStore.setBirthdayReminder(10080) }
+    }
+
+    @Test
+    fun `onToggleContactBirthdays enable triggers sync via onEnabled`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onToggleContactBirthdays(true)
+        advanceUntilIdle()
+
+        verify { contactBirthdayManager.onEnabled() }
+    }
+
+    @Test
+    fun `onToggleContactBirthdays disable calls onDisabled`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.onToggleContactBirthdays(false)
+        advanceUntilIdle()
+
+        verify { contactBirthdayManager.onDisabled() }
+    }
+
+    // ==================== UI Sheet State Tests ====================
+
+    @Test
+    fun `showICloudSignInSheet sets state to true`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.showICloudSignInSheet()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showICloudSignInSheet)
+    }
+
+    @Test
+    fun `hideICloudSignInSheet sets state to false`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.showICloudSignInSheet()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.showICloudSignInSheet)
+
+        viewModel.hideICloudSignInSheet()
+        advanceUntilIdle()
+
+        assertEquals(false, viewModel.uiState.value.showICloudSignInSheet)
+    }
+
+    @Test
+    fun `showSnackbar sets snackbar message`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.showSnackbar("Test message")
+        advanceUntilIdle()
+
+        assertEquals("Test message", viewModel.uiState.value.pendingSnackbarMessage)
+    }
+
+    @Test
+    fun `clearSnackbar removes snackbar message`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.showSnackbar("Test message")
+        advanceUntilIdle()
+        assertEquals("Test message", viewModel.uiState.value.pendingSnackbarMessage)
+
+        viewModel.clearSnackbar()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.pendingSnackbarMessage)
+    }
+
     // ==================== Edge Cases ====================
 
     @Test

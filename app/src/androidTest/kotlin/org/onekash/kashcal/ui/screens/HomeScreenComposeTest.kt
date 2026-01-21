@@ -10,12 +10,15 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.persistentSetOf
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.onekash.kashcal.data.db.dao.EventWithNextOccurrence
 import org.onekash.kashcal.data.db.entity.Calendar
 import org.onekash.kashcal.data.db.entity.Event
+import org.onekash.kashcal.data.db.entity.Occurrence
+import org.onekash.kashcal.domain.reader.EventReader.OccurrenceWithEvent
 import org.onekash.kashcal.ui.viewmodels.HomeUiState
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -324,14 +327,13 @@ class HomeScreenComposeTest {
             )
         }
 
-        // Check for day abbreviations (locale-dependent)
-        composeTestRule.onNodeWithText("Sun").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Mon").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Tue").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Wed").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Thu").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Fri").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Sat").assertIsDisplayed()
+        // Check for day abbreviations - use locale-aware day names like the production code
+        val daysOfWeek = java.time.DayOfWeek.values().map {
+            it.getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault())
+        }
+        daysOfWeek.forEach { dayName ->
+            composeTestRule.onNodeWithText(dayName).assertIsDisplayed()
+        }
     }
 
     // ==================== Search Mode Tests ====================
@@ -395,7 +397,7 @@ class HomeScreenComposeTest {
     }
 
     @Test
-    fun homeScreen_searchModeShowsIncludePastCheckbox() {
+    fun homeScreen_searchModeShowsDateFilterChips() {
         composeTestRule.setContent {
             HomeScreen(
                 uiState = createDefaultUiState().copy(
@@ -412,28 +414,10 @@ class HomeScreenComposeTest {
             )
         }
 
-        composeTestRule.onNodeWithText("Include past events").assertIsDisplayed()
-    }
-
-    @Test
-    fun homeScreen_searchResultsShowsResultCount() {
-        composeTestRule.setContent {
-            HomeScreen(
-                uiState = createDefaultUiState().copy(
-                    isSearchActive = true,
-                    searchQuery = "meeting",
-                    searchResults = testSearchResults
-                ),
-                isOnline = true,
-                onDateSelected = {},
-                onGoToToday = {},
-                onSetViewingMonth = { _, _ -> },
-                onClearNavigateToToday = {},
-                onClearNavigateToMonth = {}
-            )
-        }
-
-        composeTestRule.onNodeWithText("2 results found").assertIsDisplayed()
+        // Search UI shows date filter chips: All, Week, Month, Date
+        composeTestRule.onNodeWithText("All").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Week").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Month").assertIsDisplayed()
     }
 
     @Test
@@ -555,16 +539,55 @@ class HomeScreenComposeTest {
             )
         }
 
-        composeTestRule.onNodeWithText("No events for this day").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Nothing to see here; go touch grass?").assertIsDisplayed()
     }
 
     @Test
     fun homeScreen_showsEventTitles() {
         val today = JavaCalendar.getInstance()
+        // Calculate dayCode in YYYYMMDD format
+        val dayCode = today.get(JavaCalendar.YEAR) * 10000 +
+                (today.get(JavaCalendar.MONTH) + 1) * 100 +
+                today.get(JavaCalendar.DAY_OF_MONTH)
+
+        // Create test occurrences with events
+        val nowMs = System.currentTimeMillis()
+        val testOccurrences = persistentListOf(
+            OccurrenceWithEvent(
+                occurrence = Occurrence(
+                    id = 1L,
+                    eventId = 1L,
+                    calendarId = 1L,
+                    startTs = nowMs,
+                    endTs = nowMs + 3600000,
+                    startDay = dayCode,
+                    endDay = dayCode
+                ),
+                event = testEvents[0],
+                calendar = testCalendars[0]
+            ),
+            OccurrenceWithEvent(
+                occurrence = Occurrence(
+                    id = 2L,
+                    eventId = 2L,
+                    calendarId = 2L,
+                    startTs = nowMs + 7200000,
+                    endTs = nowMs + 10800000,
+                    startDay = dayCode,
+                    endDay = dayCode
+                ),
+                event = testEvents[1],
+                calendar = testCalendars[1]
+            )
+        )
+
         composeTestRule.setContent {
             HomeScreen(
                 uiState = createDefaultUiState().copy(
-                    selectedDayEvents = testEvents
+                    selectedDate = today.timeInMillis,
+                    dayEventsCache = persistentMapOf(dayCode to testOccurrences),
+                    loadedDayCodes = persistentSetOf(dayCode),
+                    cacheRangeCenter = today.timeInMillis
                 ),
                 isOnline = true,
                 onDateSelected = {},
