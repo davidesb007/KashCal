@@ -13,6 +13,7 @@ import kotlinx.collections.immutable.persistentMapOf
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.onekash.kashcal.data.db.dao.EventWithNextOccurrence
 import org.onekash.kashcal.data.db.entity.Calendar
 import org.onekash.kashcal.data.db.entity.Event
 import org.onekash.kashcal.ui.viewmodels.HomeUiState
@@ -77,6 +78,17 @@ class HomeScreenComposeTest {
             startTs = System.currentTimeMillis() + 7200000,
             endTs = System.currentTimeMillis() + 10800000,
             dtstamp = System.currentTimeMillis()
+        )
+    )
+
+    private val testSearchResults = persistentListOf(
+        EventWithNextOccurrence(
+            event = testEvents[0],
+            nextOccurrenceTs = System.currentTimeMillis()
+        ),
+        EventWithNextOccurrence(
+            event = testEvents[1],
+            nextOccurrenceTs = System.currentTimeMillis() + 7200000
         )
     )
 
@@ -410,7 +422,7 @@ class HomeScreenComposeTest {
                 uiState = createDefaultUiState().copy(
                     isSearchActive = true,
                     searchQuery = "meeting",
-                    searchResults = testEvents
+                    searchResults = testSearchResults
                 ),
                 isOnline = true,
                 onDateSelected = {},
